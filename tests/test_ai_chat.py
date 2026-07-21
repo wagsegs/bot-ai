@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from utils import video_search
+from utils.middleware import AIRequestMiddleware
 from utils.personality import build_system_prompt
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,17 +29,17 @@ class AIChatCleanupTests(unittest.TestCase):
         self.cog.active_personality_mode = "default"
 
     def test_output_validator_extracts_visible_reply_from_metadata(self) -> None:
-        middleware = ai_chat_module.AIRequestMiddleware()
+        middleware = AIRequestMiddleware()
         repaired = middleware._validate_output_text("MY GOSH 😳\n[text]: hello\n[send_gif]: false", fallback="nah")
         self.assertEqual(repaired, "MY GOSH 😳")
 
     def test_output_validator_recovers_json_and_xml_formatting(self) -> None:
-        middleware = ai_chat_module.AIRequestMiddleware()
+        middleware = AIRequestMiddleware()
         self.assertEqual(middleware._validate_output_text('```json\n{"text":"hi"}\n```', fallback="nah"), "hi")
         self.assertEqual(middleware._validate_output_text("<tag>hi</tag>", fallback="nah"), "hi")
 
     def test_spam_detection_allows_normal_bursts_and_delays_later(self) -> None:
-        middleware = ai_chat_module.AIRequestMiddleware()
+        middleware = AIRequestMiddleware()
         user_id = "spam-test"
         for _ in range(5):
             state, delay = middleware._get_spam_state(user_id)
