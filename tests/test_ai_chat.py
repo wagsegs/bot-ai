@@ -73,6 +73,13 @@ class AIChatCleanupTests(unittest.TestCase):
         self.assertIn("never ping", prompt.lower())
         self.assertIn("@everyone", prompt)
 
+    def test_build_system_prompt_includes_self_correction_rules(self) -> None:
+        prompt = build_system_prompt("default")
+        self.assertIn("If you make a mistake", prompt)
+        self.assertIn("my bad", prompt.lower())
+        self.assertIn("good catch", prompt.lower())
+        self.assertIn("correct yourself", prompt.lower())
+
     def test_strip_json_from_text_removes_metadata_fragment_without_braces(self) -> None:
         response = '"text": "aw thanks, sending you a virtual hug",\n"send_gif": true,\n"gif_query": "hug emoji gif"'
         self.assertEqual(self.cog._strip_json_from_text(response), "")
