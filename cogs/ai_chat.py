@@ -26,6 +26,15 @@ from utils.personality import MOODS, build_system_prompt
 from utils.supabase_memory import persistent_db_client
 from utils.gif_api import fetch_gif
 from utils.middleware import AIRequestMiddleware
+from utils.natural_participation import (
+    ConversationAnalyzer,
+    ConversationRevival,
+    CooldownManager,
+    ProbabilityEngine,
+    ReplyGenerator,
+    TopicDetector,
+)
+from utils.meme_service import MemeService
 from utils.video_search import (
     search_video,
     _looks_like_video_request,
@@ -111,6 +120,19 @@ class AIChatCog(commands.Cog):
         self._recent_video_ids: dict[int, deque[str]] = {}
         self._last_clip_time: dict[int, datetime] = {}
         self._identity_message_counts: dict[int, int] = {}
+        self._natural_participation_enabled = True
+        self._conversation_analyzer = ConversationAnalyzer()
+        self._topic_detector = TopicDetector()
+        self._probability_engine = ProbabilityEngine()
+        self._cooldown_manager = CooldownManager(default_seconds=45)
+        self._reply_generator = ReplyGenerator()
+        self._revival_engine = ConversationRevival()
+        self._meme_service = MemeService()
+        self._last_natural_participation_at: datetime | None = None
+        self._conversation_spontaneous_cooldowns: dict[str, datetime] = {}
+        self._topic_spontaneous_cooldowns: dict[str, datetime] = {}
+        self._last_bot_message_at: dict[str, datetime] = {}
+        self._active_spontaneous_tasks: set[asyncio.Task] = set()
         init_db()
         print("=== COG INIT ===")
         print("AIChatCog initialized")
@@ -253,26 +275,108 @@ class AIChatCog(commands.Cog):
         except Exception as exc:
             print("=== IDENTITY MEMORY === failed to update:", exc)
 
-    async def _maybe_participate(self, message: discord.Message) -> bool:
-        if random.random() > 0.015:
+    def _get_message_age(self, message: discord.Message) -> timedelta:
+        now = datetime.now(timezone.utc)
+        created_at = getattr(message, "created_at", None)
+        if created_at is None:
+            return timedelta(0)
+        if getattr(created_at, "tzinfo", None) is None:
+            return now - created_at.replace(tzinfo=timezone.utc)
+        return now - created_at.astimezone(timezone.utc)
+
+    def _can_spontaneously_participate(self, message: discord.Message, topic: str | None) -> bool:
+        if not self._natural_participation_enabled:
             return False
         if self._is_serious_channel(message.content or ""):
             return False
-        recent = get_recent_channel_context(str(message.channel.id), limit=25)
-        user_ids = [entry["user_id"] for entry in recent if entry.get("role") == "user"]
-        if len(recent) < 12 or len(set(user_ids)) < 3:
+        if not getattr(message, "channel", None):
             return False
-        if not self._can_participate(message.channel.id):
-            return False
+        if self._last_bot_message_at.get(str(message.channel.id)):
+            if datetime.utcnow() - self._last_bot_message_at[str(message.channel.id)] < timedelta(minutes=1):
+                return False
+        if self._last_natural_participation_at:
+            if datetime.utcnow() - self._last_natural_participation_at < timedelta(minutes=2):
+                return False
+        if self._conversation_spontaneous_cooldowns.get(str(message.channel.id)):
+            if datetime.utcnow() < self._conversation_spontaneous_cooldowns[str(message.channel.id)]:
+                return False
+        if topic and self._topic_spontaneous_cooldowns.get(topic):
+            if datetime.utcnow() < self._topic_spontaneous_cooldowns[topic]:
+                return False
+        return True
+
+    async def _deliver_spontaneous_reply(self, message: discord.Message, topic: str | None, analyzed: dict, *, probability: float) -> None:
+        if not self._can_spontaneously_participate(message, topic):
+            return
+        if not self._probability_engine.should_act(probability):
+            return
+        if not self._cooldown_manager.allow(str(message.channel.id), "reply", seconds=90):
+            return
+        if not self._cooldown_manager.allow("global", "reply", seconds=180):
+            return
+        if topic and not self._cooldown_manager.allow(topic, "reply", seconds=240):
+            return
+
+        self._last_natural_participation_at = datetime.utcnow()
+        self._conversation_spontaneous_cooldowns[str(message.channel.id)] = datetime.utcnow() + timedelta(minutes=3)
+        self._topic_spontaneous_cooldowns[topic] = datetime.utcnow() + timedelta(minutes=8) if topic else datetime.utcnow()
+        self._last_bot_message_at[str(message.channel.id)] = datetime.utcnow()
+
         try:
-            await message.channel.send(
-                random.choice(PARTICIPATION_MESSAGES),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-            return True
+            if self._probability_engine.should_act(0.3):
+                meme_url = await self._meme_service.fetch_meme_url(topic)
+                if meme_url:
+                    await message.channel.send(meme_url, allowed_mentions=discord.AllowedMentions.none())
+                    save_message(str(self.bot.user.id), str(message.channel.id), "assistant", f"[meme] {meme_url}")
+                    return
+
+            reply = self._reply_generator.build_reply(topic)
+            await message.channel.send(reply, allowed_mentions=discord.AllowedMentions.none())
+            save_message(str(self.bot.user.id), str(message.channel.id), "assistant", reply)
         except Exception as exc:
-            print("=== PARTICIPATION === failed to send message:", exc)
+            print("=== PARTICIPATION === failed to send spontaneous message:", exc)
+
+    async def _maybe_participate(self, message: discord.Message) -> bool:
+        if not self._natural_participation_enabled:
             return False
+        if self._is_serious_channel(message.content or ""):
+            return False
+
+        recent = get_recent_channel_context(str(message.channel.id), limit=24)
+        recent_messages = [
+            {"content": message.content, "user_id": str(message.author.id), "role": "user"},
+            *recent,
+        ]
+        analysis = self._conversation_analyzer.analyze(recent_messages)
+        topic = analysis.get("topic")
+        if topic is None and random.random() > 0.15:
+            return False
+
+        user_ids = [entry["user_id"] for entry in recent_messages if entry.get("role") == "user"]
+        if len(recent_messages) < 8 or len(set(user_ids)) < 2:
+            return False
+
+        message_age = self._get_message_age(message)
+        probability = 0.16
+        if topic:
+            probability = 0.22
+        if message_age >= timedelta(minutes=3):
+            probability = min(0.35, probability + 0.08)
+        if len(recent_messages) >= 12 and len(set(user_ids)) >= 3:
+            probability = min(0.35, probability + 0.05)
+
+        if not self._probability_engine.should_act(probability):
+            return False
+
+        delay = random.randint(20, 90)
+        async def delayed_reply() -> None:
+            await asyncio.sleep(delay)
+            await self._deliver_spontaneous_reply(message, topic, analysis, probability=probability)
+
+        task = asyncio.create_task(delayed_reply())
+        self._active_spontaneous_tasks.add(task)
+        task.add_done_callback(self._active_spontaneous_tasks.discard)
+        return True
 
     def _refresh_mood(self) -> None:
         now = datetime.utcnow()
@@ -728,9 +832,51 @@ class AIChatCog(commands.Cog):
         )
         return result
 
+    def _looks_like_meme_request(self, prompt: str) -> bool:
+        lowered = prompt.lower()
+        meme_triggers = (
+            "send a meme",
+            "send me a meme",
+            "give me a meme",
+            "show me a meme",
+            "drop a meme",
+            "show a meme",
+            "meme please",
+        )
+        return any(trigger in lowered for trigger in meme_triggers)
+
+    def _extract_meme_topic(self, prompt: str) -> str | None:
+        lowered = prompt.lower()
+        topic_map = {
+            "jojo": ["jojo", "jjba", "steel ball run", "stardust crusaders"],
+            "minecraft": ["minecraft"],
+            "programming": ["programming", "coding", "python"],
+            "anime": ["anime", "naruto", "one piece"],
+            "football": ["football", "soccer"],
+            "discord": ["discord"],
+        }
+        for topic, phrases in topic_map.items():
+            if any(phrase in lowered for phrase in phrases):
+                return topic
+        return None
+
+    async def _handle_meme_request(self, message: discord.Message, prompt: str) -> bool:
+        topic = self._extract_meme_topic(prompt)
+        meme_url = await self._meme_service.fetch_meme_url(topic)
+        if not meme_url:
+            await self._send_reply(message, "no meme today, the API was being dramatic 😭")
+            return True
+        await message.channel.send(meme_url, allowed_mentions=discord.AllowedMentions.none())
+        save_message(str(message.author.id), str(message.channel.id), "assistant", f"[meme] {meme_url}")
+        return True
+
     async def _handle_response(self, message: discord.Message, prompt: str) -> None:
         print("=== MESSAGE HANDLER ===")
         print("Handling AI response for user:", message.author.id, "channel:", message.channel.id)
+        if self._looks_like_meme_request(prompt):
+            await self._handle_meme_request(message, prompt)
+            return
+
         if self._should_refuse_mass_mention(prompt):
             await self._send_reply(message, "respectfully no, I’m not mass mentioning people.")
             return
