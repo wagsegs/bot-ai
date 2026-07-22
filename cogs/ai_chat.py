@@ -589,6 +589,87 @@ class AIChatCog(commands.Cog):
         }
         return content.split()[0].lower() in known_commands
 
+    async def _is_owner(self, user: discord.User | discord.Member) -> bool:
+        if self.bot.owner_id and user.id == self.bot.owner_id:
+            return True
+        app = getattr(self.bot, "application", None)
+        owner = getattr(app, "owner", None)
+        if owner and user.id == owner.id:
+            return True
+        guild = getattr(user, "guild", None)
+        if guild and getattr(guild, "owner_id", None) == user.id:
+            return True
+        return False
+
+    def _build_user_guide_embeds(self) -> list[discord.Embed]:
+        bot_emoji = "<:botkun:1529443061581611120>"
+        color = discord.Color.from_rgb(0x7B, 0x61, 0xFF)
+
+        def make_embed(title: str, description: str, *, fields: list[tuple[str, str]] | None = None) -> discord.Embed:
+            embed = discord.Embed(
+                title=f"{bot_emoji} {title}",
+                description=description,
+                color=color,
+                timestamp=datetime.now(timezone.utc),
+            )
+            if fields:
+                for name, value in fields:
+                    embed.add_field(name=name, value=value, inline=False)
+            embed.set_footer(text=f"{bot_emoji} Bot-kun guide")
+            return embed
+
+        return [
+            make_embed(
+                "Meet Bot-kun",
+                "Bot-kun is a playful member of the server, not just a cold machine. It joins conversations naturally, brings its own personality, and sometimes pops in when the vibe feels right. It is not always online in the same way a human is, so replies can feel spontaneous rather than guaranteed.",
+            ),
+            make_embed(
+                "What Bot-kun Can Do",
+                "Here is the simple version: you can use Bot-kun however feels natural to you, and you can start a direct chat with .ai whenever you want.",
+                fields=[
+                    ("💬 Chat naturally", "Talk to Bot-kun like you would talk to another member of the server."),
+                    ("✨ Mention or reply", "Mention Bot-kun directly or reply to one of its messages to keep the conversation going."),
+                    ("🎭 Join the moment", "Bot-kun may jump into a chat on its own, revive a quiet thread, or bring a meme into the mix."),
+                    ("🖼️ Ask for a meme", "If the mood calls for it, you can ask Bot-kun for a meme or a funny reaction."),
+                    ("⚡ Stay in context", "Bot-kun understands the flow of a conversation, so the more natural your message, the better the response."),
+                    ("🗨️ Start with .ai", "Use .ai followed by your prompt to begin a direct chat with Bot-kun."),
+                ],
+            ),
+            make_embed(
+                "Tips",
+                "A few quick tips make the experience better.",
+                fields=[
+                    ("Keep it natural", "Treat Bot-kun like another person in the room rather than a command machine."),
+                    ("Don’t spam it", "One good message usually lands better than a flood of them."),
+                    ("Expect variety", "Different chats can lead to different reactions, and that is part of the fun."),
+                    ("Be patient", "Bot-kun will not always reply, and that is okay."),
+                ],
+            ),
+            make_embed(
+                "Commands",
+                "These are the public ways members can interact with Bot-kun.",
+                fields=[
+                    ("`.ai`", "Use this to start a direct chat with Bot-kun. Example: `.ai tell me a wild story`."),
+                    ("Mention or reply", "Mention Bot-kun in chat or reply to one of its messages to keep the conversation going."),
+                    ("Ask for a meme", "If you want something lighter, ask Bot-kun for a meme or a funny response."),
+                ],
+            ),
+            make_embed(
+                "Personality",
+                "Bot-kun is witty, Gen Z, occasionally sarcastic, and a little chaotic when the moment is right. It likes memes, it does not take itself too seriously, and it is not always trying to answer everything with perfect logic.",
+            ),
+        ]
+
+    async def _post_user_guide(self, message: discord.Message) -> None:
+        embeds = self._build_user_guide_embeds()
+        for embed in embeds:
+            await message.channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+
+        try:
+            await message.delete()
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
     def _format_uptime(self, uptime: timedelta) -> str:
         total_seconds = int(uptime.total_seconds())
         days, remainder = divmod(total_seconds, 86400)
@@ -1073,6 +1154,7 @@ class AIChatCog(commands.Cog):
             name_detected = self._is_bot_name_mentioned(message)
 
         is_dot_ai = bool(message.content and message.content.startswith(".ai "))
+        is_rulesbot_command = bool(message.content and message.content.strip().lower() == ".rulesbot")
         is_roast = bool(message.content and "roast me" in message.content.lower())
         is_admin_command = bool(message.content and message.content.startswith("~"))
         is_bang_command = bool(message.content and message.content.startswith("!"))
@@ -1107,6 +1189,13 @@ class AIChatCog(commands.Cog):
 
         if is_bang_command or is_question_command:
             print("Ignored because message uses a legacy command prefix")
+            return
+
+        if is_rulesbot_command:
+            if not await self._is_owner(message.author):
+                await self._send_reply(message, "Only the owner can post that guide here.")
+                return
+            await self._post_user_guide(message)
             return
 
         if is_admin_command:

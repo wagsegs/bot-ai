@@ -28,6 +28,22 @@ class AIChatCleanupTests(unittest.TestCase):
         self.cog = ai_chat_module.AIChatCog.__new__(ai_chat_module.AIChatCog)
         self.cog.active_personality_mode = "default"
 
+    def test_build_user_guide_embeds_contains_member_facing_content(self) -> None:
+        embeds = self.cog._build_user_guide_embeds()
+
+        self.assertEqual(len(embeds), 5)
+        titles = [embed.title for embed in embeds]
+        self.assertIn("<:botkun:1529443061581611120> Meet Bot-kun", titles[0])
+        self.assertIn("<:botkun:1529443061581611120> What Bot-kun Can Do", titles[1])
+        self.assertIn("<:botkun:1529443061581611120> Tips", titles[2])
+        self.assertIn("<:botkun:1529443061581611120> Commands", titles[3])
+        self.assertIn("<:botkun:1529443061581611120> Personality", titles[4])
+
+        combined = "\n".join(embed.description or "" for embed in embeds)
+        self.assertIn(".ai", combined)
+        self.assertIn("meme", combined.lower())
+        self.assertIn("witty", combined.lower())
+
     def test_output_validator_extracts_visible_reply_from_metadata(self) -> None:
         middleware = AIRequestMiddleware()
         repaired = middleware._validate_output_text("MY GOSH 😳\n[text]: hello\n[send_gif]: false", fallback="nah")
