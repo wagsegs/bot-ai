@@ -131,7 +131,8 @@ class RequestQueue:
         spam_block: bool = False,
     ) -> dict:
         if spam_block:
-            return {"reply": random.choice(["slow down a bit 😭", "give me a sec"]), "gif_category": None, "actions": []}
+            self._stats["overflow_drops"] += 1
+            return {"reply": "", "gif_category": None, "actions": [], "dropped": True}
 
         async with self._lock:
             if self._queue.qsize() >= OVERFLOW_QUEUE_SIZE:
@@ -155,4 +156,5 @@ class RequestQueue:
         try:
             return await future
         except Exception:
-            return {"reply": fallback_message or random.choice(FALLBACK_REPLIES), "gif_category": None, "actions": []}
+            self._stats["failed_requests"] += 1
+            return {"reply": "", "gif_category": None, "actions": [], "dropped": True}
