@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 
 class DashboardData:
@@ -18,6 +18,7 @@ class DashboardData:
         memory_usage_mb: float,
         bot_latency_ms: float,
         last_error: str | None,
+        cache_breakdown: dict[str, int] | None = None,
     ) -> None:
         self.start_time = start_time
         self.provider_status = provider_status
@@ -30,6 +31,7 @@ class DashboardData:
         self.memory_usage_mb = memory_usage_mb
         self.bot_latency_ms = bot_latency_ms
         self.last_error = last_error
+        self.cache_breakdown = cache_breakdown or {}
 
     @staticmethod
     def format_uptime(uptime: timedelta) -> str:
@@ -49,8 +51,8 @@ class DashboardData:
         return " ".join(parts)
 
     def build_embed(self) -> dict:
-        """Return field data for discord.Embed construction."""
-        uptime = datetime.utcnow() - self.start_time
+        """Return grouped field data for discord.Embed construction."""
+        uptime = datetime.now(UTC) - self.start_time
         provider_label = {
             "ready": "Ready",
             "rate_limited": "Rate Limited",
@@ -60,27 +62,45 @@ class DashboardData:
         }.get(self.provider_status, self.provider_status.replace("_", " ").title())
 
         return {
-            "uptime": self.format_uptime(uptime),
-            "provider": "Groq (llama-3.3-70b-versatile)",
-            "provider_status": provider_label,
-            "queue": str(self.queue_stats.get("queue_size", 0)),
-            "requests_per_min": self._requests_per_min(),
-            "budget": f"{self.budget_status.get('state', 'unknown').upper()} ({self.budget_status.get('usage_percentage', 0)}%)",
-            "online_offline": f"{self.availability_status.get('state', 'unknown').upper()} ({self.availability_status.get('remaining_minutes', 0)}m)",
-            "api_latency_ms": round(self.bot_latency_ms),
-            "response_time_ms": self.queue_stats.get("average_response_ms", 0),
-            "conversations": str(self.conversation_count),
-            "cache_size": str(self.cache_size),
-            "memory_mb": round(self.memory_usage_mb, 1),
-            "current_rate": f"{self.queue_stats.get('current_rate', 0)}/10s",
-            "last_error": self.last_error or "None",
-            "ai_enabled": "Enabled" if self.ai_enabled else "Disabled",
-            "success": str(self.queue_stats.get("successful_requests", 0)),
-            "failures": str(self.queue_stats.get("failed_requests", 0)),
-            "overflow_drops": str(self.queue_stats.get("overflow_drops", 0)),
+            "system": {
+                "ai_enabled": "Enabled" if self.ai_enabled else "Disabled",
+                "provider": "Groq (llama-3.3-70b-versatile)",
+                "provider_status": provider_label,
+                "uptime": self.format_uptime(uptime),
+            },
+            "performance": {
+                "api_latency_ms": round(self.bot_latency_ms),
+                "avg_response_ms": self.queue_stats.get("average_response_ms", 0),
+                "queue_size": str(self.queue_stats.get("queue_size", 0)),
+                "current_rate": f"{self.queue_stats.get('current_rate', 0)}/10s",
+                "requests_per_min": self._requests_per_min(),
+            },
+            "availability": {
+                "state": self.availability_status.get('state', 'unknown').upper(),
+                "remaining_minutes": str(self.availability_status.get('remaining_minutes', 0)),
+                "budget_state": self.budget_status.get('state', 'unknown').upper(),
+                "budget_usage": f"{self.budget_status.get('usage_percentage', 0)}%",
+            },
+            "memory": {
+                "conversations": str(self.conversation_count),
+                "cache_size": str(self.cache_size),
+                "memory_mb": f"{round(self.memory_usage_mb, 1)} MB",
+            },
+            "statistics": {
+                "success": str(self.queue_stats.get("successful_requests", 0)),
+                "failures": str(self.queue_stats.get("failed_requests", 0)),
+                "dropped": str(self.queue_stats.get("overflow_drops", 0)),
+                "last_error": self.last_error or "None",
+            },
+            "server_cache": {
+                "members": str(self.cache_breakdown.get("members", 0)),
+                "channels": str(self.cache_breakdown.get("channels", 0)),
+                "roles": str(self.cache_breakdown.get("roles", 0)),
+            },
+            "last_updated": datetime.now(UTC).strftime("%H:%M:%S UTC"),
         }
 
     def _requests_per_min(self) -> str:
         success = self.queue_stats.get("successful_requests", 0)
-        uptime_min = max(1, (datetime.utcnow() - self.start_time).total_seconds() / 60)
+        uptime_min = max(1, (datetime.now(UTC) - self.start_time).total_seconds() / 60)
         return f"{round(success / uptime_min, 1)}"

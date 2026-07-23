@@ -36,6 +36,21 @@ class ServerCache:
             total += len(g.get("roles", []))
         return total
 
+    def get_cache_breakdown(self) -> dict[str, int]:
+        """Return breakdown of cached items by type."""
+        total_members = 0
+        total_channels = 0
+        total_roles = 0
+        for g in self._guilds.values():
+            total_members += len(g.get("members", {}))
+            total_channels += len(g.get("channels", {}))
+            total_roles += len(g.get("roles", []))
+        return {
+            "members": total_members,
+            "channels": total_channels,
+            "roles": total_roles,
+        }
+
     def get_member(self, guild_id: int, user_id: int) -> Optional[dict]:
         guild = self._guilds.get(guild_id, {})
         return guild.get("members", {}).get(user_id)

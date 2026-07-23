@@ -42,7 +42,7 @@ logger.setLevel(logging.INFO)
 logger.propagate = False
 
 ADMIN_COMMANDS = {"~bot", "~dashboard", "~reload", "~blacklist", "~clip"}
-PUBLIC_COMMANDS = {"~botkun"}
+PUBLIC_COMMANDS = {"~botkun", "~guide"}
 
 
 class AIChatCog(commands.Cog):
@@ -297,6 +297,62 @@ class AIChatCog(commands.Cog):
                 await self._send_reply(message, f"{BOT_NAME} is online and lurking 👀")
             else:
                 await self._send_reply(message, f"{BOT_NAME} is taking a break right now.")
+        
+        if command == "~guide":
+            # Delete user's command message
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            
+            # Create guide embed
+            from pathlib import Path
+            image_path = Path(__file__).parent.parent / "image.png"
+            
+            embed = discord.Embed(
+                title="🤖 Bot-kun Guide",
+                description="I'm just another member of the server.\n\nTalk to me naturally—mention me once, then keep chatting normally.\n\nI won't always reply, and that's intentional.",
+                color=discord.Color.teal()
+            )
+            
+            if image_path.exists():
+                with open(image_path, "rb") as f:
+                    embed.set_thumbnail(file=discord.File(f, "image.png"))
+            
+            embed.add_field(
+                name="✨ What I Can Do",
+                value="• Chat naturally\n• Pull up YouTube videos\n• Send GIFs & memes\n• Occasionally join conversations\n• Turn funny moments into **Bombo Times** episodes",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="💡 Tips",
+                value="• You don't need commands for everything.\n• If I don't reply, I might be taking a break, busy talking to someone else, or slowing myself down.",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="📜 Public Commands",
+                value="`~botkun`   Check if I'm online.\n`~guide`    Show this guide.",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🎬 Bombo Times",
+                value="Admins can use `~clip` to turn the latest conversation into a **Bombo Times** episode posted in **#bombo-times**.",
+                inline=False
+            )
+            
+            embed.set_footer(text="This guide disappears in 45 seconds.")
+            
+            guide_message = await message.channel.send(embed=embed)
+            
+            # Auto-delete after 45 seconds
+            await asyncio.sleep(45)
+            try:
+                await guide_message.delete()
+            except Exception:
+                pass
 
     async def _handle_admin_command(self, message: discord.Message) -> None:
         content = message.content.strip()
@@ -315,9 +371,14 @@ class AIChatCog(commands.Cog):
 
         if command == "~dashboard":
             import resource
+            from pathlib import Path
+            
             mem_mb = 0.0
             if sys.platform != "win32":
                 mem_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            
+            cache_breakdown = self.server_cache.get_cache_breakdown()
+            
             data = DashboardData(
                 start_time=self._start_time,
                 provider_status=self.provider.status,
@@ -330,11 +391,82 @@ class AIChatCog(commands.Cog):
                 memory_usage_mb=mem_mb,
                 bot_latency_ms=self.bot.latency * 1000,
                 last_error=self.queue.last_error,
+                cache_breakdown=cache_breakdown,
             )
+            
             fields = data.build_embed()
-            embed = discord.Embed(title="🤖 Bot-kun Dashboard", color=discord.Color.teal(), timestamp=datetime.now(timezone.utc))
-            for key, value in fields.items():
-                embed.add_field(name=key.replace("_", " ").title(), value=str(value), inline=True)
+            
+            # Create engineer-style dashboard embed
+            embed = discord.Embed(
+                title="╭──────────────────────────────╮\n        BOT-KUN DASHBOARD\n╰──────────────────────────────╯",
+                color=discord.Color.dark_teal(),
+                timestamp=datetime.now(timezone.utc)
+            )
+            
+            # Add image thumbnail
+            image_path = Path(__file__).parent.parent / "image.png"
+            if image_path.exists():
+                with open(image_path, "rb") as f:
+                    embed.set_thumbnail(file=discord.File(f, "image.png"))
+            
+            # System section
+            sys_vals = fields["system"]
+            embed.add_field(
+                name="System",
+                value=f"**AI:** {sys_vals['ai_enabled']}\n**Provider:** {sys_vals['provider']}\n**Status:** {sys_vals['provider_status']}\n**Uptime:** {sys_vals['uptime']}",
+                inline=False
+            )
+            
+            # Performance section
+            perf_vals = fields["performance"]
+            embed.add_field(
+                name="Performance",
+                value=f"**API Latency:** {perf_vals['api_latency_ms']} ms\n**Avg Response:** {perf_vals['avg_response_ms']} ms\n**Queue:** {perf_vals['queue_size']}\n**Rate:** {perf_vals['current_rate']}\n**Req/Min:** {perf_vals['requests_per_min']}",
+                inline=False
+            )
+            
+            # Availability section
+            avail_vals = fields["availability"]
+            embed.add_field(
+                name="Availability",
+                value=f"**State:** {avail_vals['state']}\n**Time Left:** {avail_vals['remaining_minutes']} min\n**Budget:** {avail_vals['budget_state']} ({avail_vals['budget_usage']})",
+                inline=False
+            )
+            
+            # Memory section
+            mem_vals = fields["memory"]
+            embed.add_field(
+                name="Memory",
+                value=f"**Conversations:** {mem_vals['conversations']}\n**Cache:** {mem_vals['cache_size']}\n**RAM:** {mem_vals['memory_mb']}",
+                inline=False
+            )
+            
+            # Statistics section
+            stats_vals = fields["statistics"]
+            embed.add_field(
+                name="Statistics",
+                value=f"**Success:** {stats_vals['success']}\n**Failures:** {stats_vals['failures']}\n**Dropped:** {stats_vals['dropped']}\n**Last Error:** {stats_vals['last_error']}",
+                inline=False
+            )
+            
+            # Server Cache section
+            cache_vals = fields["server_cache"]
+            embed.add_field(
+                name="Server Cache",
+                value=f"**Members:** {cache_vals['members']}\n**Channels:** {cache_vals['channels']}\n**Roles:** {cache_vals['roles']}",
+                inline=False
+            )
+            
+            # Admin Commands section
+            embed.add_field(
+                name="Admin Commands",
+                value="`~bot` Toggle Bot-kun\n`~reload` Reload bot and cache\n`~clip` Create Bombo Times episode\n`~blacklist` Manage blocked users",
+                inline=False
+            )
+            
+            # Footer with last updated time
+            embed.set_footer(text=f"Last Updated\n{fields['last_updated']}")
+            
             await self._send_reply(message, None, embed=embed)
             return
 

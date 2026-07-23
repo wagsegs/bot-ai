@@ -29,6 +29,60 @@ VIDEO_TRIGGER_PHRASES = (
     "pull up",
 )
 
+# Action verbs that indicate video search intent
+ACTION_VERBS = (
+    "pull up",
+    "show",
+    "show me",
+    "play",
+    "put on",
+    "find",
+    "search",
+    "open",
+    "watch",
+    "look for",
+)
+
+# Video content indicators
+VIDEO_TARGETS = (
+    "trailer",
+    "movie",
+    "song",
+    "music",
+    "video",
+    "clip",
+    "episode",
+    "soundtrack",
+    "live performance",
+    "official video",
+    "music video",
+    "official audio",
+)
+
+# False positive patterns - these should NOT trigger video search
+FALSE_POSITIVE_PATTERNS = (
+    "show me your",
+    "show me my",
+    "show me his",
+    "show me her",
+    "show me their",
+    "play with me",
+    "play with",
+    "watch this conversation",
+    "watch the conversation",
+    "find my",
+    "find your",
+    "find his",
+    "find her",
+    "find their",
+    "open the server",
+    "open server",
+    "show me your code",
+    "show me your opinion",
+    "show me your memory",
+    "show me your thoughts",
+)
+
 FOLLOW_UP_PHRASES = {
     "another one", "another video", "another", "show another",
     "pull up another", "one more", "again", "it", "that", "him", "her", "more",
@@ -60,12 +114,42 @@ def looks_like_video_request(text: str) -> bool:
     if not text:
         return False
     lowered = _normalize_text(text)
+    
+    # First, check for false positive patterns
+    for pattern in FALSE_POSITIVE_PATTERNS:
+        if pattern in lowered:
+            return False
+    
+    # Check for action verb + video target combination (most natural)
+    has_action_verb = any(verb in lowered for verb in ACTION_VERBS)
+    has_video_target = any(target in lowered for target in VIDEO_TARGETS)
+    
+    if has_action_verb and has_video_target:
+        return True
+    
+    # Check for legacy trigger phrases
     if any(phrase in lowered for phrase in VIDEO_TRIGGER_PHRASES):
         return True
+    
+    # More lenient: if there's an action verb with content that looks like a title
+    if has_action_verb:
+        # Check if there's meaningful content after the action verb
+        words = lowered.split()
+        # If there are enough words to be a title (at least 2-3 words after removing action verb)
+        if len(words) >= 3:
+            # Remove common action verbs from the start
+            for verb in ACTION_VERBS:
+                if lowered.startswith(verb):
+                    remaining = lowered[len(verb):].strip()
+                    # If remaining text has substance, it's likely a video request
+                    if len(remaining.split()) >= 2:
+                        return True
+    
+    # Check for explicit video keywords with action verbs
     if any(kw in lowered for kw in ("video", "youtube", "song", "music", "trailer")):
-        action_verbs = ["play", "watch", "show", "find", "search", "open", "look for", "pull up"]
-        if any(verb in lowered for verb in action_verbs):
+        if any(verb in lowered for verb in ACTION_VERBS):
             return True
+    
     return False
 
 

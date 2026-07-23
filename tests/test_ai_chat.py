@@ -95,6 +95,26 @@ class AIChatTests(unittest.TestCase):
         self.assertTrue(youtube.looks_like_video_request("play the video of birds"))
         self.assertTrue(youtube.looks_like_video_request("pull up interstellar trailer"))
         self.assertFalse(youtube.looks_like_video_request("tell me a story"))
+        
+        # Test natural phrases that should trigger
+        self.assertTrue(youtube.looks_like_video_request("pull up the odyssey trailer"))
+        self.assertTrue(youtube.looks_like_video_request("show me the gta 6 trailer"))
+        self.assertTrue(youtube.looks_like_video_request("play never gonna give you up"))
+        self.assertTrue(youtube.looks_like_video_request("put on blinding lights"))
+        self.assertTrue(youtube.looks_like_video_request("can you show me the new superman trailer"))
+        self.assertTrue(youtube.looks_like_video_request("find the minecraft movie trailer"))
+        self.assertTrue(youtube.looks_like_video_request("search youtube for oppenheimer trailer"))
+        self.assertTrue(youtube.looks_like_video_request("open the dune trailer"))
+        self.assertTrue(youtube.looks_like_video_request("put on some lofi"))
+        
+        # Test false positives that should NOT trigger
+        self.assertFalse(youtube.looks_like_video_request("show me your opinion"))
+        self.assertFalse(youtube.looks_like_video_request("show me your code"))
+        self.assertFalse(youtube.looks_like_video_request("play with me"))
+        self.assertFalse(youtube.looks_like_video_request("watch this conversation"))
+        self.assertFalse(youtube.looks_like_video_request("find my message"))
+        self.assertFalse(youtube.looks_like_video_request("open the server"))
+        self.assertFalse(youtube.looks_like_video_request("show me your memory"))
 
     def test_search_video_skips_recently_sent_video_ids(self) -> None:
         os.environ["YOUTUBE_API_KEY"] = "test-youtube-key"
