@@ -173,19 +173,43 @@ def extract_search_query(text: str) -> str:
     if not text:
         return ""
     lowered = _normalize_text(text)
+    
+    # Remove bot name mentions
     lowered = re.sub(r"^(?:bot\s+kun|kun|hey kun|yo kun)\b\s*", "", lowered)
-    lowered = re.sub(r"^(?:hey|yo|please|pls|can you|could you|would you)\s+", "", lowered)
-    for phrase in VIDEO_TRIGGER_PHRASES:
-        if phrase in lowered:
-            lowered = lowered.split(phrase, 1)[1]
-            break
-    lowered = _normalize_text(lowered)
+    
+    # Remove conversational prefixes
+    lowered = re.sub(r"^(?:hey|yo|please|pls|can you|could you|would you|would)\s+", "", lowered)
+    
+    # Remove command verbs at the start
+    command_verbs = [
+        r"show\s+me\s+",
+        r"show\s+",
+        r"play\s+",
+        r"find\s+",
+        r"pull\s+up\s+",
+        r"pull\s+",
+        r"look\s+(?:for|up)\s+",
+        r"look\s+",
+        r"open\s+",
+        r"search\s+(?:for|youtube\s+for)\s+",
+        r"search\s+",
+        r"watch\s+",
+        r"put\s+on\s+",
+    ]
+    for verb in command_verbs:
+        lowered = re.sub(r"^" + verb, "", lowered)
+    
+    # Remove articles at the start
     lowered = re.sub(r"^(?:a|an|the)\s+", "", lowered)
+    
+    # Clean up extra whitespace
+    lowered = _normalize_text(lowered)
+    
+    # If empty after cleaning, return original (fallback)
     if not lowered:
-        return ""
-    if re.search(r"\b(?:video|clip|watch|trailer)\b", lowered):
-        return lowered
-    return f"{lowered} video".strip()
+        return _normalize_text(text)
+    
+    return lowered
 
 
 def is_safe_request(text: str) -> bool:
