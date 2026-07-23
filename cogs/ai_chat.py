@@ -393,8 +393,8 @@ class AIChatCog(commands.Cog):
                 logger.info("[guide] Step 3: Creating embed")
                 logger.info("[guide] Step 4: Building embed fields")
                 embed = discord.Embed(
-                    title="🤖 Bot-kun Guide",
-                    description="I'm just another member of the server.\n\nTalk to me naturally—mention me once, then keep chatting normally.\n\nI won't always reply, and that's intentional.",
+                    title="<:botkun:1529443061581611120> Bot-kun Guide",
+                    description="I'm just another member of the server.\n\nTalk to me naturally—mention me once, then keep chatting normally.\n\n<a:typingdots:1529443144901464205> I won't always reply, and that's intentional.",
                     color=discord.Color.teal()
                 )
                 
@@ -405,44 +405,35 @@ class AIChatCog(commands.Cog):
                 
                 logger.info("[guide] Step 6: Adding fields")
                 embed.add_field(
-                    name="✨ What I Can Do",
-                    value="• Chat naturally\n• Pull up YouTube videos\n• Send GIFs & memes\n• Occasionally join conversations\n• Turn funny moments into **Bombo Times** episodes",
+                    name="<a:sparkles:1529443142175166585> What I Can Do",
+                    value="• Chat naturally\n• Pull up YouTube videos\n• Send GIFs & memes\n• Occasionally join conversations\n• Turn funny moments into **Bombo Times** episodes\n• Remember ongoing conversations",
                     inline=False
                 )
                 
                 embed.add_field(
-                    name="💡 Tips",
-                    value="• You don't need commands for everything.\n• If I don't reply, I might be taking a break, busy talking to someone else, or slowing myself down.",
+                    name="<a:oldtelephone:1529443123602653225> Tips",
+                    value="• You don't need commands for everything.\n• Mention me once, then chat normally.\n• <:wink:1529450343925026886> If I stop replying, I might be taking a break, talking to someone else, or someone interrupted our conversation.",
                     inline=False
                 )
                 
                 embed.add_field(
                     name="📜 Public Commands",
-                    value="`~botkun`   Check if I'm online.\n`~guide`    Show this guide.",
+                    value="`~botkun` — Check if I'm online.\n`~guide` — Show this guide.",
                     inline=False
                 )
                 
                 embed.add_field(
                     name="🎬 Bombo Times",
-                    value="Admins can use `~clip` to turn the latest conversation into a **Bombo Times** episode posted in **#bombo-times**.",
+                    value="Admins can use `~clip` to turn the latest conversation into a **Bombo Times** episode posted in <#1526652930604662955>.",
                     inline=False
                 )
                 
-                embed.set_footer(text="This guide disappears in 45 seconds.")
+                embed.set_footer(text="<a:waggingtail:1529429229370871899> Have fun chatting with Bot-kun!")
                 
                 logger.info("[guide] Step 7: Sending embed")
                 guide_message = await message.channel.send(embed=embed)
                 logger.info("[%s] Guide sent successfully.", command)
-                
-                # Auto-delete after 45 seconds
-                logger.info("[guide] Step 8: Starting 45s sleep for auto-delete")
-                await asyncio.sleep(45)
-                logger.info("[guide] Step 9: Deleting guide message")
-                try:
-                    await guide_message.delete()
-                except Exception as e:
-                    logger.warning("[guide] Failed to delete guide message: %s", e)
-                logger.info("[guide] Step 10: Guide command completed")
+                logger.info("[guide] Guide command completed")
             except Exception:
                 logger.exception("Guide command failed")
                 raise
@@ -637,6 +628,9 @@ class AIChatCog(commands.Cog):
 
         if self.blacklist.is_blacklisted(user_id):
             return
+
+        # Interrupt active conversation if a third party posts in the channel
+        self.conversations.interrupt_if_needed(channel_id, user_id)
 
         bot_id = self.bot.user.id if self.bot.user else 0
         detected = self.intent_detector.detect(

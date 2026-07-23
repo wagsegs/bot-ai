@@ -1,7 +1,10 @@
 """Track conversation ownership: channel → active user."""
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, UTC
+
+logger = logging.getLogger("botkun.conversation")
 
 
 @dataclass
@@ -28,8 +31,19 @@ class ConversationManager:
         if existing:
             existing.user_id = user_id
             existing.last_activity = datetime.now(UTC)
+            logger.info("[conversation] Continued: channel=%s user=%s", channel_id, user_id)
         else:
             self._active[channel_id] = ChannelConversation(user_id=user_id)
+            logger.info("[conversation] Started: channel=%s user=%s", channel_id, user_id)
+
+    def interrupt_if_needed(self, channel_id: str, author_id: str) -> None:
+        """Interrupt active conversation if a third party posts in the channel."""
+        owner = self.get_owner(channel_id)
+        if owner is None:
+            return
+        if author_id != owner:
+            logger.info("[conversation] Interrupted by user=%s (was owner=%s)", author_id, owner)
+            del self._active[channel_id]
 
     def get_owner(self, channel_id: str) -> str | None:
         conv = self._active.get(channel_id)
@@ -50,6 +64,7 @@ class ConversationManager:
         if owner is None:
             return directed_at_bot
         if directed_at_bot:
+            logger.info("[conversation] Resumed via explicit mention: user=%s", author_id)
             self.claim(channel_id, author_id)
             return True
         if author_id == owner:
