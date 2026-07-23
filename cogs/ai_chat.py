@@ -293,10 +293,13 @@ class AIChatCog(commands.Cog):
 
     async def _handle_public_command(self, message: discord.Message, command: str) -> None:
         if command == "~botkun":
-            if is_bot_available() and self.ai_enabled:
+            # Always report actual status, don't block on availability
+            status = get_bot_availability().get_status()
+            if self.ai_enabled and status["is_online"]:
                 await self._send_reply(message, f"{BOT_NAME} is online and lurking 👀")
             else:
-                await self._send_reply(message, f"{BOT_NAME} is taking a break right now.")
+                reason = "taking a break" if not status["is_online"] else "disabled"
+                await self._send_reply(message, f"{BOT_NAME} is {reason} right now.")
         
         if command == "~guide":
             # Delete user's command message
