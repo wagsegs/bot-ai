@@ -106,8 +106,14 @@ class AIChatCog(commands.Cog):
         return content.split()[0].lower() in ADMIN_COMMANDS | PUBLIC_COMMANDS
 
     async def _is_admin(self, user: discord.User | discord.Member) -> bool:
-        if isinstance(user, discord.Member) and user.guild_permissions.administrator:
-            return True
+        if isinstance(user, discord.Member):
+            # Check for director role
+            director_role_id = 1526875918944043058
+            if any(role.id == director_role_id for role in user.roles):
+                return True
+            # Fallback to administrator permission
+            if user.guild_permissions.administrator:
+                return True
         if self.bot.owner_id and user.id == self.bot.owner_id:
             return True
         app = getattr(self.bot, "application", None)
