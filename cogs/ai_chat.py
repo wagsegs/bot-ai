@@ -41,8 +41,8 @@ if not logger.handlers:
 logger.setLevel(logging.INFO)
 logger.propagate = False
 
-ADMIN_COMMANDS = {"~bot", "~dashboard", "~reload", "~blacklist", "~clip"}
-PUBLIC_COMMANDS = {"~botkun", "~guide"}
+ADMIN_COMMANDS = {"~bot", "~dashboard", "~reload", "~blacklist", "~clip", "~guide"}
+PUBLIC_COMMANDS = {"~botkun"}
 
 
 class AIChatCog(commands.Cog):
@@ -338,7 +338,47 @@ class AIChatCog(commands.Cog):
             else:
                 reason = "taking a break" if not status["is_online"] else "disabled"
                 await self._send_reply(message, f"{BOT_NAME} is {reason} right now.")
+
+    async def _handle_admin_command(self, message: discord.Message) -> None:
+        content = message.content.strip()
+        command = content.split()[0].lower()
         
+        logger.info(
+            "[%s] %s (%d) invoked in #%s (%d)",
+            command,
+            message.author,
+            message.author.id,
+            message.channel.name,
+            message.channel.id,
+        )
+
+        is_admin = await self._is_admin(message.author)
+        
+        logger.info(
+            "[%s] Admin check for %s (%d): %s",
+            command,
+            message.author,
+            message.author.id,
+            "PASSED" if is_admin else "FAILED",
+        )
+
+        if not is_admin:
+            logger.warning(
+                "[%s] Access denied for %s (%d)",
+                command,
+                message.author,
+                message.author.id,
+            )
+            if self._is_known_command(content):
+                await self._send_reply(message, "Nice try. Admin only.")
+            return
+
+        if command == "~bot":
+            self.ai_enabled = not self.ai_enabled
+            state = "online" if self.ai_enabled else "offline"
+            await self._send_reply(message, f"Bot-kun is now {state}.")
+            return
+
         if command == "~guide":
             try:
                 logger.info("[guide] Step 1: Starting guide command")
@@ -406,45 +446,6 @@ class AIChatCog(commands.Cog):
             except Exception:
                 logger.exception("Guide command failed")
                 raise
-
-    async def _handle_admin_command(self, message: discord.Message) -> None:
-        content = message.content.strip()
-        command = content.split()[0].lower()
-        
-        logger.info(
-            "[%s] %s (%d) invoked in #%s (%d)",
-            command,
-            message.author,
-            message.author.id,
-            message.channel.name,
-            message.channel.id,
-        )
-
-        is_admin = await self._is_admin(message.author)
-        
-        logger.info(
-            "[%s] Admin check for %s (%d): %s",
-            command,
-            message.author,
-            message.author.id,
-            "PASSED" if is_admin else "FAILED",
-        )
-
-        if not is_admin:
-            logger.warning(
-                "[%s] Access denied for %s (%d)",
-                command,
-                message.author,
-                message.author.id,
-            )
-            if self._is_known_command(content):
-                await self._send_reply(message, "Nice try. Admin only.")
-            return
-
-        if command == "~bot":
-            self.ai_enabled = not self.ai_enabled
-            state = "online" if self.ai_enabled else "offline"
-            await self._send_reply(message, f"Bot-kun is now {state}.")
             return
 
         if command == "~dashboard":
