@@ -145,6 +145,24 @@ class AIChatTests(unittest.TestCase):
         self.assertEqual(leaked, "broken")
         self.assertNotIn("{", leaked)
 
+    def test_unwrap_quoted_string_removes_outer_quotes(self) -> None:
+        planner = ActionPlanner()
+        self.assertEqual(planner.unwrap_quoted_string('"hello"'), "hello")
+        self.assertEqual(planner.unwrap_quoted_string("'hello'"), "hello")
+        self.assertEqual(planner.unwrap_quoted_string('"heyyyy!! 🙌"'), "heyyyy!! 🙌")
+        self.assertEqual(planner.unwrap_quoted_string('  "hello"  '), "hello")
+
+    def test_unwrap_quoted_string_preserves_internal_quotes(self) -> None:
+        planner = ActionPlanner()
+        self.assertEqual(planner.unwrap_quoted_string('He said "hello" yesterday.'), 'He said "hello" yesterday.')
+        self.assertEqual(planner.unwrap_quoted_string('"He said \\"hello\\""'), '"He said \\"hello\\""')  # escaped quotes inside
+
+    def test_validate_output_text_unwraps_quoted_replies(self) -> None:
+        planner = ActionPlanner()
+        self.assertEqual(planner.validate_output_text('"hello"'), "hello")
+        self.assertEqual(planner.validate_output_text('"heyyyy!! 🙌"'), "heyyyy!! 🙌")
+        self.assertEqual(planner.validate_output_text('He said "hello" yesterday.'), 'He said "hello" yesterday.')
+
     def test_server_context_block(self) -> None:
         class RoleStub:
             def __init__(self, name: str, managed: bool = False) -> None:
@@ -168,6 +186,56 @@ class AIChatTests(unittest.TestCase):
         self.assertIn("Current User", context)
         self.assertIn("Display Name: Diego", context)
         self.assertIn("Mentioned Users", context)
+
+    def test_conversation_manager_continuation_works(self) -> None:
+        from router.conversation_manager import ConversationManager
+        from datetime import datetime, timedelta, UTC
+        
+        manager = ConversationManager()
+        channel_id = "channel-123"
+        diego_id = "user-456"
+        bob_id = "user-789"
+        
+        # Diego starts conversation with mention
+        manager.claim(channel_id, diego_id)
+        
+        # Diego continues without mention - should respond
+        self.assertTrue(manager.should_respond(channel_id, diego_id, directed_at_bot=False))
+        
+        # Bob interrupts - should NOT respond (not owner, not directed)
+        self.assertFalse(manager.should_respond(channel_id, bob_id, directed_at_bot=False))
+        
+        # Diego continues again - should still respond
+        self.assertTrue(manager.should_respond(channel_id, diego_id, directed_at_bot=False))
+        
+        # Bob mentions bot directly - should respond and claim
+        self.assertTrue(manager.should_respond(channel_id, bob_id, directed_at_bot=True))
+        self.assertEqual(manager.get_owner(channel_id), bob_id)
+        
+        # Now Diego interrupts - should NOT respond
+        self.assertFalse(manager.should_respond(channel_id, diego_id, directed_at_bot=False))
+
+    def test_conversation_manager_expires_after_timeout(self) -> None:
+        from router.conversation_manager import ConversationManager
+        from datetime import datetime, timedelta, UTC
+        
+        manager = ConversationManager()
+        channel_id = "channel-123"
+        user_id = "user-456"
+        
+        # Start conversation
+        manager.claim(channel_id, user_id)
+        self.assertEqual(manager.get_owner(channel_id), user_id)
+        
+        # Manually expire the conversation
+        conv = manager._active[channel_id]
+        conv.last_activity = datetime.now(UTC) - timedelta(minutes=15)
+        
+        # Should now return None (expired)
+        self.assertIsNone(manager.get_owner(channel_id))
+        
+        # Should not respond to continuation after expiration
+        self.assertFalse(manager.should_respond(channel_id, user_id, directed_at_bot=False))
 
 
 if __name__ == "__main__":

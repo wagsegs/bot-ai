@@ -181,6 +181,22 @@ class ActionPlanner:
 
         return {"reply": "", "gif_category": None, "youtube_query": None, "meme_topic": None, "actions": []}
 
+    def unwrap_quoted_string(self, text: str) -> str:
+        """Remove outer quotes if the entire string is wrapped in them."""
+        if not text:
+            return text
+        stripped = text.strip()
+        if len(stripped) >= 2:
+            # Check if wrapped in matching quotes
+            if (stripped[0] == '"' and stripped[-1] == '"') or (stripped[0] == "'" and stripped[-1] == "'"):
+                # Only unwrap if the quotes are at the very start and end
+                # and there's no other quotes inside that would indicate a legitimate quote
+                inner = stripped[1:-1].strip()
+                # Check if inner has any quotes - if so, it might be a legitimate quoted phrase
+                if '"' not in inner and "'" not in inner:
+                    return inner
+        return text
+
     def validate_output_text(self, text: str | None, fallback: str | None = None) -> str:
         fallback_message = fallback or GENERIC_FALLBACKS[0]
         if not text or not isinstance(text, str):
@@ -192,12 +208,16 @@ class ActionPlanner:
         # First try to parse as JSON response
         parsed = self.parse_response(raw)
         if parsed.get("reply") and not self.looks_like_leaked_format(parsed["reply"]):
-            return parsed["reply"]
+            reply = parsed["reply"]
+            # Unwrap if entire reply is quoted
+            reply = self.unwrap_quoted_string(reply)
+            return reply
         
         # If parsing failed or result still looks leaked, check original text
         if self.looks_like_leaked_format(raw):
             return fallback_message
-        return raw
+        # Unwrap if entire raw text is quoted
+        return self.unwrap_quoted_string(raw)
 
     def strip_youtube_claims_without_action(self, reply: str, actions: list[str]) -> str:
         """Remove hallucinated 'I searched YouTube' claims if youtube wasn't executed."""
