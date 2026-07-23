@@ -351,9 +351,6 @@ class AIChatCog(commands.Cog):
                 
                 # Create guide embed
                 logger.info("[guide] Step 3: Creating embed")
-                from pathlib import Path
-                image_path = Path(__file__).parent.parent / "image.png"
-                
                 logger.info("[guide] Step 4: Building embed fields")
                 embed = discord.Embed(
                     title="🤖 Bot-kun Guide",
@@ -362,9 +359,9 @@ class AIChatCog(commands.Cog):
                 )
                 
                 logger.info("[guide] Step 5: Setting thumbnail")
-                if image_path.exists():
-                    with open(image_path, "rb") as f:
-                        embed.set_thumbnail(file=discord.File(f, "image.png"))
+                embed.set_thumbnail(
+                    url="https://static.wikia.nocookie.net/nicos-nextbots-fanmade/images/9/98/Finch.png/revision/latest/scale-to-width-down/1000?cb=20240130015210"
+                )
                 
                 logger.info("[guide] Step 6: Adding fields")
                 embed.add_field(
@@ -494,10 +491,9 @@ class AIChatCog(commands.Cog):
                 
                 # Add image thumbnail
                 logger.info("[dashboard] Step 8: Setting thumbnail")
-                image_path = Path(__file__).parent.parent / "image.png"
-                if image_path.exists():
-                    with open(image_path, "rb") as f:
-                        embed.set_thumbnail(file=discord.File(f, "image.png"))
+                embed.set_thumbnail(
+                    url="https://static.wikia.nocookie.net/nicos-nextbots-fanmade/images/9/98/Finch.png/revision/latest/scale-to-width-down/1000?cb=20240130015210"
+                )
                 
                 # System section
                 logger.info("[dashboard] Step 9: Adding System field")
