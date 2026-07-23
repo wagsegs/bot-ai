@@ -1,31 +1,34 @@
-# AI Discord Companion Bot
+# AI Discord Companion Bot — Bot-kun
 
-This is a separate standalone Discord AI companion bot built with Python, discord.py, Groq, and optional GIF support.
+Bot-kun is a Discord server member with its own personality — not an assistant.
 
 ## Features
 
-- Mention-triggered conversations
-- Reply-to-bot conversation continuity
-- Temporary SQLite conversation memory
-- Playful personality with emoji and meme-aware tone
-- Optional GIF reactions via Klipy
-- Safe, privacy-focused behavior
-- Automatic online/offline cycles for natural presence
-- Graceful API usage throttling to prevent rate limits
-- Multiple personality modes (admin-controlled)
+- Single unified personality (friendly, funny, calm, slightly sarcastic)
+- Conversation ownership — remembers who it's talking to per channel
+- Natural conversation flow after initial @mention or reply
+- Human-like reply delays (3–8s normal, 8–20s under load)
+- Groq-powered responses (llama-3.3-70b-versatile)
+- YouTube, meme, and GIF tools
+- Local conversation memory with summarization
+- Proactive rate limiting and request queue
+- Online/offline availability cycles
+- Natural participation every ~50 messages
+- Moderation: spam filter, blacklist, explicit request handling
 
 ## Project structure
 
-- bot.py - entry point
-- config.py - environment configuration
-- cogs/ai_chat.py - message handling and AI responses
-- utils/personality.py - editable bot personality
-- utils/conversation.py - temporary session helpers
-- utils/database.py - SQLite memory storage
-- utils/gif_api.py - optional GIF lookup
-- utils/availability.py - online/offline cycle management
-- utils/response_budget.py - API usage throttling
-- utils/natural_participation.py - spontaneous conversation joining
+```
+bot.py
+├── cogs/ai_chat.py          — thin orchestrator
+├── router/                  — message routing, intents, conversation ownership
+├── ai/                      — Groq provider, prompts, response parsing
+├── tools/                   — YouTube, GIFs, memes, clip
+├── memory/                  — conversation, user, server cache
+├── moderation/              — blacklist, spam, NSFW
+├── monitoring/              — dashboard, rate limit, queue, logging
+└── utils/                   — database, availability, budget (legacy shims)
+```
 
 ## Setup
 
@@ -34,46 +37,45 @@ This is a separate standalone Discord AI companion bot built with Python, discor
    pip install -r requirements.txt
    ```
 
-2. Fill in the environment values in .env:
-   - DISCORD_TOKEN
-   - GROQ_API_KEY
-   - KLIPY_KEY (optional)
-   - BOT_NAME (optional)
-   - BOT_ONLINE_MIN (optional, default: 25)
-   - BOT_ONLINE_MAX (optional, default: 40)
-   - BOT_OFFLINE_MIN (optional, default: 15)
-   - BOT_OFFLINE_MAX (optional, default: 60)
-   - BUDGET_CAP (optional, default: 100)
-   - BUDGET_THRESHOLD_NORMAL (optional, default: 50)
-   - BUDGET_THRESHOLD_REDUCED (optional, default: 80)
-   - BUDGET_THRESHOLD_CRITICAL (optional, default: 95)
+2. Fill in `.env`:
+   - `DISCORD_TOKEN`
+   - `GROQ_API_KEY`
+   - `KLIPY_KEY` (optional, for GIFs)
+   - `YOUTUBE_API_KEY` (optional, for video search)
+   - `BOT_NAME` (optional, default: Nova)
 
-3. Run the bot:
+3. Run:
    ```bash
    python bot.py
    ```
 
 ## Commands
 
-- `~aihelp` - Show help menu
-- `~mode` - Show current personality
-- `~mode <personality>` - Change personality (admin only)
-- `~status` - Show bot status including availability and budget
-- `~availability` - Show availability window status (admin only)
-- `~forceonline [minutes]` - Force bot online (admin only)
-- `~forceoffline [minutes]` - Force bot offline (admin only)
+### Public
+- `~botkun` — one-line online/offline status
+
+### Admin
+- `~bot` — toggle bot on/off
+- `~dashboard` — full engineer dashboard
+- `~reload` — reload personality, clear caches, restart conversations
+- `~blacklist [@user]` — manage blacklist
+- `~clip` — generate Episode summary from last 30 messages, post to #bombo-times
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| DISCORD_TOKEN | — | Required |
+| GROQ_API_KEY | — | Required |
+| BOT_NAME | Nova | Bot display name |
+| KLIPY_KEY | — | GIF API key |
+| YOUTUBE_API_KEY | — | YouTube search |
+| BOT_ONLINE_MIN/MAX | 25/40 | Online window (minutes) |
+| BOT_OFFLINE_MIN/MAX | 15/60 | Offline window (minutes) |
+| BUDGET_CAP | 100 | API requests per hour |
+| RESPONSE_DELAY_MIN/MAX | 3/8 | Normal reply delay (seconds) |
+| RESPONSE_DELAY_HEAVY_MIN/MAX | 8/20 | Heavy load delay (seconds) |
 
 ## Railway deployment
 
-Set these environment variables in Railway:
-
-- DISCORD_TOKEN
-- GROQ_API_KEY
-- KLIPY_KEY
-- BOT_NAME
-
-Use the startup command:
-
-```bash
-python bot.py
-```
+Set `DISCORD_TOKEN`, `GROQ_API_KEY`, and optional keys. Start with `python bot.py`.
