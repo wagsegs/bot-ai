@@ -48,8 +48,30 @@ class BotAvailability:
                         if self._window_end.tzinfo is None:
                             self._window_end = self._window_end.replace(tzinfo=timezone.utc)
                     logger.info(f"Loaded state from disk: online={self._is_online}, window_end={self._window_end}")
+                
+                # Check if loaded window has already expired
+                now = datetime.now(timezone.utc)
+                if now >= self._window_end:
+                    logger.info(f"Loaded window has expired (current: {now}, window_end: {self._window_end})")
+                    # Transition to opposite state
+                    old_state = "ONLINE" if self._is_online else "OFFLINE"
+                    self._is_online = not self._is_online
+                    new_state = "ONLINE" if self._is_online else "OFFLINE"
+                    logger.info(f"Startup transition: {old_state} → {new_state}")
+                    self._start_new_window()
+                else:
+                    # Window is still valid, continue with it
+                    old_state = "ONLINE" if self._is_online else "OFFLINE"
+                    remaining = max(timedelta(0), self._window_end - now)
+                    logger.info(f"Continuing existing {old_state} window ({int(remaining.total_seconds() / 60)}m remaining)")
+            else:
+                # No state file exists, start fresh with ONLINE
+                logger.info("No state file found, starting fresh with ONLINE window")
+                self._is_online = True
+                self._start_new_window()
         except Exception as exc:
-            logger.warning(f"Failed to load state from disk: {exc}, starting fresh")
+            logger.warning(f"Failed to load state from disk: {exc}, starting fresh with ONLINE window")
+            self._is_online = True
             self._start_new_window()
     
     def _save_state(self) -> None:
@@ -80,10 +102,24 @@ class BotAvailability:
     def _check_and_transition(self) -> None:
         """Check if current window has ended and transition if needed."""
         now = datetime.now(timezone.utc)
+        logger.info(f"[AVAILABILITY CHECK] Current State: {'ONLINE' if self._is_online else 'OFFLINE'}, Current Time: {now.strftime('%H:%M:%S UTC')}, Window Ends: {self._window_end.strftime('%H:%M:%S UTC')}")
+        
         if now >= self._window_end:
             # Window ended, flip state
+            old_state = "ONLINE" if self._is_online else "OFFLINE"
             self._is_online = not self._is_online
+            new_state = "ONLINE" if self._is_online else "OFFLINE"
+            
+            logger.info(f"[AVAILABILITY TRANSITION] Window Expired: YES")
+            logger.info(f"[AVAILABILITY TRANSITION] {old_state} → {new_state}")
+            
             self._start_new_window()
+            
+            # Log next window duration
+            remaining = max(timedelta(0), self._window_end - now)
+            logger.info(f"[AVAILABILITY TRANSITION] Next Window: {int(remaining.total_seconds() / 60)} minutes")
+        else:
+            logger.info(f"[AVAILABILITY CHECK] Window Expired: NO")
     
     def is_bot_available(self) -> bool:
         """Check if bot is currently available (online)."""
