@@ -49,7 +49,7 @@ class AIChatCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.ai_enabled = True
-        self._start_time = datetime.utcnow()
+        self._start_time = datetime.now(timezone.utc)
 
         self.provider = GroqProvider()
         self.planner = ActionPlanner()
