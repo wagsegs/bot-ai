@@ -106,19 +106,42 @@ class AIChatCog(commands.Cog):
         return content.split()[0].lower() in ADMIN_COMMANDS | PUBLIC_COMMANDS
 
     async def _is_admin(self, user: discord.User | discord.Member) -> bool:
+        logger.info("Checking admin status for %s (%d)", user, user.id)
+        
         if isinstance(user, discord.Member):
+            for role in user.roles:
+                logger.info("Role: %s (%d)", role.name, role.id)
+            
             # Check for director role
             director_role_id = 1526875918944043058
             if any(role.id == director_role_id for role in user.roles):
+                logger.info("Matched director role.")
                 return True
+            logger.info("Director role not found.")
+            
             # Fallback to administrator permission
             if user.guild_permissions.administrator:
+                logger.info("Matched Administrator permission.")
                 return True
+            logger.info("Administrator permission not present.")
+        
         if self.bot.owner_id and user.id == self.bot.owner_id:
+            logger.info("Matched configured bot owner.")
             return True
+        logger.info("Not configured bot owner.")
+        
         app = getattr(self.bot, "application", None)
         owner = getattr(app, "owner", None)
-        return bool(owner and user.id == owner.id)
+        if owner:
+            logger.info("Application owner: %s (%d)", owner, owner.id)
+            if user.id == owner.id:
+                logger.info("Matched application owner.")
+                return True
+        else:
+            logger.info("Application owner not available.")
+        
+        logger.warning("Admin check failed for %s (%d)", user, user.id)
+        return False
 
     async def _send_reply(
         self,
@@ -298,6 +321,15 @@ class AIChatCog(commands.Cog):
         self.conversations.claim(channel_id, user_id)
 
     async def _handle_public_command(self, message: discord.Message, command: str) -> None:
+        logger.info(
+            "[%s] %s (%d) invoked in #%s (%d)",
+            command,
+            message.author,
+            message.author.id,
+            message.channel.name,
+            message.channel.id,
+        )
+        
         if command == "~botkun":
             # Always report actual status, don't block on availability
             status = get_bot_availability().get_status()
@@ -308,6 +340,7 @@ class AIChatCog(commands.Cog):
                 await self._send_reply(message, f"{BOT_NAME} is {reason} right now.")
         
         if command == "~guide":
+            logger.info("[%s] Building guide...", command)
             # Delete user's command message
             try:
                 await message.delete()
@@ -355,6 +388,7 @@ class AIChatCog(commands.Cog):
             embed.set_footer(text="This guide disappears in 45 seconds.")
             
             guide_message = await message.channel.send(embed=embed)
+            logger.info("[%s] Guide sent successfully.", command)
             
             # Auto-delete after 45 seconds
             await asyncio.sleep(45)
@@ -366,8 +400,33 @@ class AIChatCog(commands.Cog):
     async def _handle_admin_command(self, message: discord.Message) -> None:
         content = message.content.strip()
         command = content.split()[0].lower()
+        
+        logger.info(
+            "[%s] %s (%d) invoked in #%s (%d)",
+            command,
+            message.author,
+            message.author.id,
+            message.channel.name,
+            message.channel.id,
+        )
 
-        if not await self._is_admin(message.author):
+        is_admin = await self._is_admin(message.author)
+        
+        logger.info(
+            "[%s] Admin check for %s (%d): %s",
+            command,
+            message.author,
+            message.author.id,
+            "PASSED" if is_admin else "FAILED",
+        )
+
+        if not is_admin:
+            logger.warning(
+                "[%s] Access denied for %s (%d)",
+                command,
+                message.author,
+                message.author.id,
+            )
             if self._is_known_command(content):
                 await self._send_reply(message, "Nice try. Admin only.")
             return
@@ -379,6 +438,7 @@ class AIChatCog(commands.Cog):
             return
 
         if command == "~dashboard":
+            logger.info("[%s] Building dashboard...", command)
             import resource
             from pathlib import Path
             
@@ -477,6 +537,7 @@ class AIChatCog(commands.Cog):
             embed.set_footer(text=f"Last Updated\n{fields['last_updated']}")
             
             await self._send_reply(message, None, embed=embed)
+            logger.info("[%s] Dashboard sent successfully.", command)
             return
 
         if command == "~reload":
