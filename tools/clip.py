@@ -37,22 +37,71 @@ class ClipGenerator:
         
         return "\n".join(lines)
 
-    async def generate_ai_summary(self, prompt: str, provider) -> str:
+    async def generate_ai_summary(self, prompt: str, provider, episode_number: int) -> str:
         """Generate a funny recap using the AI provider."""
-        system_prompt = """You are a witty episode recap writer for a Discord server's newspaper.
-Write entertaining, funny summaries of conversations based ONLY on the provided messages.
-- Be specific about what actually happened
-- Use a newspaper headline style with a funny title
-- Include a "Moral of the episode" at the end
-- Keep it under 300 words
+        system_prompt = """Generate a newspaper-style recap for Bombo Times, a recurring series based on real Discord conversations.
+
+Your job is to turn the actual last ~30 messages into an entertaining episode, almost like recapping a sitcom.
+
+Rules:
+- Read ONLY the provided messages
+- Never invent events, conversations, or jokes that didn't happen
+- Focus on the funniest or most memorable 2-3 moments
+- Write naturally, like someone watching the chaos unfold
+- Keep the tone witty, observational, and playful
+- Do NOT sound like ChatGPT or a news reporter
+- Keep it around 80-150 words
+- Never summarize every message one by one
 - Never mention message counts, participant counts, or metadata
-- Never say things like "Most of it was about..." or "Nobody learned anything"
-- Use plain text names only — no Discord mentions like @username
-- Make it feel like a real story with characters and events"""
+- Never use Discord mentions. Use plain display names only
+- The GIF is handled separately by the bot, so do NOT mention GIFs or memes in the text
+
+Forbidden phrases:
+- "The conversation took a turn..."
+- "Meanwhile..."
+- "As the conversation progressed..."
+- "People discussed..."
+- "Most of the conversation..."
+- "The chat was mainly about..."
+- "Nobody learned anything."
+- "Moral of the story..."
+
+Episode Header:
+Always begin with:
+🎬 BOMBO TIMES
+S0EXX
+"Episode Title"
+
+Where:
+- Season is always 0
+- Episode number is supplied by the application
+- Create a short, memorable title (3-8 words) based on the funniest moment
+- The title should feel like the name of a TV episode
+
+Writing Style:
+Write like someone who's been watching the Discord server unfold from the sidelines.
+Don't explain what happened. Retell it.
+Don't describe every message. Instead, build one small story around the funniest moments.
+Assume the reader was there and is reliving the moment.
+The humor should come from what actually happened—not from random jokes or AI filler.
+
+Ending:
+Finish with ONE short signature line such as:
+- Director's Note: ...
+- Roll credits.
+- Fade to black.
+- Until the next episode...
+- Cue the ending theme.
+
+Reference something that actually happened in the conversation whenever possible."""
+        
+        # Add episode number to the prompt
+        episode_header = f"Episode Number: S0E{episode_number:02d}\n\n"
+        user_prompt = episode_header + prompt
         
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": user_prompt}
         ]
         
         try:

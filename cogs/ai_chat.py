@@ -367,9 +367,11 @@ class AIChatCog(commands.Cog):
         if command == "~clip":
             channel = message.channel
             messages = await self.clip_gen.fetch_channel_messages(channel, limit=30)
+            episode_num = self.clip_gen.next_episode_number()
             summary = await self.clip_gen.generate_ai_summary(
                 self.clip_gen.build_conversation_prompt(messages),
-                self.provider
+                self.provider,
+                episode_number=episode_num
             )
             target = self.bot.get_channel(CLIP_SUMMARY_CHANNEL_ID)
             meme_url = await self.tools.handle_meme()
