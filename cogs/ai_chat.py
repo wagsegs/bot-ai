@@ -428,7 +428,7 @@ class AIChatCog(commands.Cog):
                     inline=False
                 )
                 
-                embed.set_footer(text="<a:waggingtail:1529429229370871899> Have fun chatting with Bot-kun!")
+                embed.set_footer(text="<a:waga:1529429229370871899> Have fun chatting with Bot-kun!")
                 
                 logger.info("[guide] Step 7: Sending embed")
                 guide_message = await message.channel.send(embed=embed)
