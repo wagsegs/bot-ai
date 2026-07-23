@@ -40,7 +40,7 @@ class AIChatCleanupTests(unittest.TestCase):
         self.assertIn("<:botkun:1529443061581611120> Personality", titles[4])
 
         combined = "\n".join(embed.description or "" for embed in embeds)
-        self.assertIn(".ai", combined)
+        self.assertNotIn(".ai", combined)
         self.assertIn("meme", combined.lower())
         self.assertIn("witty", combined.lower())
 
@@ -101,7 +101,7 @@ class AIChatCleanupTests(unittest.TestCase):
         self.assertFalse(self.cog._should_refuse_mass_mention("say hi to the group"))
 
     def test_known_command_detection_only_supports_tilde_prefix(self) -> None:
-        self.assertTrue(self.cog._is_known_command("~help"))
+        self.assertTrue(self.cog._is_known_command("~aihelp"))
         self.assertTrue(self.cog._is_known_command("~activate"))
         self.assertFalse(self.cog._is_known_command("?help"))
         self.assertFalse(self.cog._is_known_command("!activate"))
@@ -120,16 +120,21 @@ class AIChatCleanupTests(unittest.TestCase):
         self.assertIn("persuasive", prompt.lower())
 
     def test_video_request_detection_and_query_extraction(self) -> None:
-        self.assertTrue(video_search._looks_like_video_request("bot kun pull up a bird chirping video"))
-        self.assertEqual(video_search._extract_search_query("bot kun pull up a bird chirping video"), "bird chirping video")
-        self.assertEqual(video_search._extract_search_query("show me monkey eating banana"), "monkey eating banana video")
+        # Only explicit video/music requests should trigger
+        self.assertTrue(video_search._looks_like_video_request("bot kun play the video of bird chirping"))
+        self.assertTrue(video_search._looks_like_video_request("watch this youtube video"))
+        self.assertTrue(video_search._looks_like_video_request("find me a song"))
+        self.assertFalse(video_search._looks_like_video_request("bot kun pull up a bird chirping video"))  # "pull up" removed
         self.assertFalse(video_search._looks_like_video_request("tell me a story"))
+        self.assertFalse(video_search._looks_like_video_request("pull it up"))  # Vague phrase should not trigger
 
     def test_explicit_video_requests_are_distinguished_from_normal_chat(self) -> None:
-        self.assertTrue(video_search._looks_like_video_request("show me another"))
-        self.assertTrue(video_search._looks_like_video_request("can you show it"))
-        self.assertTrue(video_search._looks_like_video_request("another one"))
-        self.assertTrue(video_search._looks_like_video_request("got another?"))
+        # Only explicit requests with video/music keywords should trigger
+        self.assertFalse(video_search._looks_like_video_request("show me another"))  # No video keyword
+        self.assertFalse(video_search._looks_like_video_request("can you show it"))  # No video keyword
+        self.assertFalse(video_search._looks_like_video_request("another one"))  # No video keyword
+        self.assertTrue(video_search._looks_like_video_request("show me another video"))  # Has "video"
+        self.assertTrue(video_search._looks_like_video_request("play another song"))  # Has "song"
         self.assertFalse(video_search._looks_like_video_request("that's good shit"))
         self.assertFalse(video_search._looks_like_video_request("lmao"))
 

@@ -16,26 +16,17 @@ def _get_youtube_api_key() -> str:
     return os.getenv("YOUTUBE_API_KEY", YOUTUBE_API_KEY) or ""
 
 VIDEO_TRIGGER_PHRASES = (
-    "pull up",
-    "show me",
-    "find me",
-    "send me",
-    "send the link",
-    "lemme see",
-    "let me see",
     "play the video",
     "open the video",
     "video of",
     "clip of",
-    "watch",
-    "another video",
-    "another one",
-    "show another",
-    "pull up another",
-    "can you show it",
-    "let me see it",
-    "got another",
-    "more videos",
+    "youtube video",
+    "youtube",
+    "music video",
+    "song",
+    "music",
+    "watch this",
+    "watch the",
 )
 
 FOLLOW_UP_PHRASES = {
@@ -125,14 +116,18 @@ def _looks_like_video_request(text: str) -> bool:
     if not text:
         return False
     lowered = _normalize_text(text)
+    
+    # Only trigger on explicit video/music references with high confidence
     if any(phrase in lowered for phrase in VIDEO_TRIGGER_PHRASES):
         return True
-    if re.search(r"\b(?:show|find|send|pull up|play|open|watch|let me see|lemme see)\b", lowered) and re.search(r"\b(?:video|clip|link)\b", lowered):
-        return True
-    if re.search(r"\b(?:another|more)\b", lowered) and re.search(r"\b(?:video|clip|one)\b", lowered):
-        return True
-    if lowered.endswith(" video") or " video " in lowered:
-        return True
+    
+    # Require explicit "video" or "youtube" or "song" mentions
+    if "video" in lowered or "youtube" in lowered or "song" in lowered or "music" in lowered:
+        # Still require some action verb to be present
+        action_verbs = ["play", "watch", "show", "find", "search", "open", "look for"]
+        if any(verb in lowered for verb in action_verbs):
+            return True
+    
     return False
 
 

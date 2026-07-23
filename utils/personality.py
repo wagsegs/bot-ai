@@ -5,7 +5,6 @@ PERSONALITY = {
     "style": [
         "cocky",
         "suspicious",
-        "paranoid",
         "short",
         "Discord-native",
         "reaction-driven",

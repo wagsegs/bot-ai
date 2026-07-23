@@ -42,6 +42,8 @@ from utils.video_search import (
     _is_follow_up_request,
     VIDEO_OPENERS,
 )
+from utils.availability import is_bot_available, get_bot_availability
+from utils.response_budget import record_request, can_respond, get_spontaneous_probability_multiplier, get_response_budget
 
 require_config()
 
@@ -341,6 +343,14 @@ class AIChatCog(commands.Cog):
             return False
         if self._is_serious_channel(message.content or ""):
             return False
+        
+        # Check bot availability - don't participate when offline
+        if not is_bot_available():
+            return False
+        
+        # Check response budget - don't participate if budget exhausted
+        if not can_respond():
+            return False
 
         recent = get_recent_channel_context(str(message.channel.id), limit=24)
         recent_messages = [
@@ -364,6 +374,9 @@ class AIChatCog(commands.Cog):
             probability = min(0.35, probability + 0.08)
         if len(recent_messages) >= 12 and len(set(user_ids)) >= 3:
             probability = min(0.35, probability + 0.05)
+
+        # Apply budget-based probability multiplier
+        probability *= get_spontaneous_probability_multiplier()
 
         if not self._probability_engine.should_act(probability):
             return False
@@ -585,7 +598,10 @@ class AIChatCog(commands.Cog):
             "~status",
             "~memoryclear",
             "~reload",
-            "~help",
+            "~aihelp",
+            "~availability",
+            "~forceonline",
+            "~forceoffline",
         }
         return content.split()[0].lower() in known_commands
 
@@ -625,14 +641,13 @@ class AIChatCog(commands.Cog):
             ),
             make_embed(
                 "What Bot-kun Can Do",
-                "Here is the simple version: you can use Bot-kun however feels natural to you, and you can start a direct chat with .ai whenever you want.",
+                "Here is the simple version: you can use Bot-kun however feels natural to you.",
                 fields=[
                     ("💬 Chat naturally", "Talk to Bot-kun like you would talk to another member of the server."),
                     ("✨ Mention or reply", "Mention Bot-kun directly or reply to one of its messages to keep the conversation going."),
                     ("🎭 Join the moment", "Bot-kun may jump into a chat on its own, revive a quiet thread, or bring a meme into the mix."),
                     ("🖼️ Ask for a meme", "If the mood calls for it, you can ask Bot-kun for a meme or a funny reaction."),
                     ("⚡ Stay in context", "Bot-kun understands the flow of a conversation, so the more natural your message, the better the response."),
-                    ("🗨️ Start with .ai", "Use .ai followed by your prompt to begin a direct chat with Bot-kun."),
                 ],
             ),
             make_embed(
@@ -649,7 +664,6 @@ class AIChatCog(commands.Cog):
                 "Commands",
                 "These are the public ways members can interact with Bot-kun.",
                 fields=[
-                    ("`.ai`", "Use this to start a direct chat with Bot-kun. Example: `.ai tell me a wild story`."),
                     ("Mention or reply", "Mention Bot-kun in chat or reply to one of its messages to keep the conversation going."),
                     ("Ask for a meme", "If you want something lighter, ask Bot-kun for a meme or a funny response."),
                 ],
@@ -727,6 +741,27 @@ class AIChatCog(commands.Cog):
             return value.strip().lower() in {"true", "yes", "1", "on"}
         return False
 
+    def _looks_like_leaked_format(self, text: str) -> bool:
+        """Check if text looks like leaked JSON/metadata that shouldn't be sent to Discord."""
+        if not text:
+            return False
+        lowered = text.lower()
+        if lowered in {"null", "undefined", "none"}:
+            return True
+        if re.fullmatch(r"[\[\]\{\}\s]+", lowered):
+            return True
+        if "```" in lowered:
+            return True
+        if re.search(r"</?[a-zA-Z][^>]*>", lowered):
+            return True
+        if re.search(r"\b(?:assistant|system|user)\s*:", lowered):
+            return True
+        if re.search(r"(?<![a-z])(?:text|send_gif|gif_query)\s*:", lowered):
+            return True
+        if re.search(r"\[(?:text|send_gif|gif_query)\]:", lowered):
+            return True
+        return False
+
     def _try_parse_json(self, text: str) -> dict | None:
         if not text or not isinstance(text, str):
             return None
@@ -765,6 +800,13 @@ class AIChatCog(commands.Cog):
             if parsed is not None:
                 return parsed
             cursor = start + 1
+
+        # Secondary attempt: try to extract just the "text" field via regex
+        text_match = re.search(r'"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"', text)
+        if text_match:
+            extracted_text = text_match.group(1).replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
+            logger.info("Extracted text field via regex fallback from malformed JSON")
+            return {"text": extracted_text, "send_gif": False, "gif_query": ""}
 
         return None
 
@@ -861,6 +903,7 @@ class AIChatCog(commands.Cog):
 
             print("GROQ response did not parse as JSON or contained only malformed JSON metadata")
             print("Raw response text:", repr(response_text))
+            logger.warning("Failed to parse LLM response as JSON, using fallback")
             return {"reply": "", "gif_category": None}
         except AuthenticationError as auth_exc:
             self._provider_status = "auth_error"
@@ -1001,9 +1044,18 @@ class AIChatCog(commands.Cog):
             mentioned_users = [mention for mention in message.mentions if isinstance(mention, discord.Member)]
         server_context = self._build_server_context_block(message.author if isinstance(message.author, discord.Member) else None, mentioned_users)
         result = await self._get_ai_reply(prompt, context, user_id=str(message.author.id), server_context=server_context)
+        
+        # Record this request in the budget system
+        record_request()
+        
         reply_text = result["reply"][:250].strip()
         if len(reply_text) >= 250:
             reply_text = reply_text[:-1] + "…"
+
+        # Ensure we never send raw JSON or empty responses
+        if not reply_text or self._looks_like_leaked_format(reply_text):
+            logger.warning(f"Reply text is empty or looks like leaked format, using fallback. Reply: {repr(reply_text[:100])}")
+            reply_text = random.choice(["nah my brain lagged for a sec 💀", "brain lag", "thinking machine exploded"])
 
         save_message(str(message.author.id), str(message.channel.id), "user", prompt)
         save_message(str(message.author.id), str(message.channel.id), "assistant", reply_text)
@@ -1014,15 +1066,19 @@ class AIChatCog(commands.Cog):
             await self._send_reply(message, reply_text)
 
         if result.get("gif_category"):
-            gif_url = await fetch_gif(result["gif_category"])
-            if gif_url:
-                print("=== DISCORD SEND === Final GIF URL to send:", gif_url)
-                try:
-                    sent_gif_message = await message.channel.send(gif_url, allowed_mentions=discord.AllowedMentions.none())
-                    print("Sent GIF URL successfully:", getattr(sent_gif_message, "id", None))
-                except Exception as exc:
-                    print("Discord exception while sending GIF URL:", exc)
-                    raise
+            try:
+                gif_url = await fetch_gif(result["gif_category"])
+                if gif_url:
+                    print("=== DISCORD SEND === Final GIF URL to send:", gif_url)
+                    try:
+                        sent_gif_message = await message.channel.send(gif_url, allowed_mentions=discord.AllowedMentions.none())
+                        print("Sent GIF URL successfully:", getattr(sent_gif_message, "id", None))
+                    except Exception as exc:
+                        logger.warning(f"Discord exception while sending GIF URL: {exc}")
+                        # GIF failure should not block the text response
+            except Exception as exc:
+                logger.warning(f"GIF retrieval failed: {exc}")
+                # GIF failure should not block the text response
 
         print("=== FINAL === Finished handling message")
 
@@ -1036,13 +1092,13 @@ class AIChatCog(commands.Cog):
         command = content.split()[0].lower()
         is_admin = message.author.guild_permissions.administrator
 
-        if command == "~help":
+        if command == "~aihelp":
             embed = discord.Embed(
                 title="━━━━━━━━━━━━━━━━━━\n🤖 MI BOMBO AI",
                 description="A polished Discord-side AI companion with personality controls and admin tools.",
                 color=discord.Color.from_rgb(0x7B, 0x61, 0xFF),
             )
-            embed.add_field(name="📚 General Commands", value="`~help` Shows this menu\n`~mode` Shows the current personality", inline=False)
+            embed.add_field(name="📚 General Commands", value="`~aihelp` Shows this menu\n`~mode` Shows the current personality", inline=False)
             embed.add_field(name="🛠 Administrator Commands", value="`~activate` Enable AI globally\n`~deactivate` Disable AI globally\n`~mode <personality>` Change the active personality\n`~resetmode` Reset to Default\n`~status` Show AI status\n`~memoryclear` Clear conversation memory\n`~reload` Reload personality prompt", inline=False)
             embed.add_field(name="🎭 Available Personalities", value="⭐ Default\n💖 UWU\n😈 Gremlin\n🕵 Detective\n👑 Villain\n📜 NPC\n😴 Sleepy\n💀 Chaotic\n🥊 Tsundere\n🏴 Pirate\n🎮 Gamer\n🏢 Corporate\n🎭 Anime\n🐱 Cat\n📖 Oracle\n🇯🇲 Jamaican\n⚖️ Saul", inline=False)
             embed.add_field(name="Current Mode", value=f"**{self.active_personality_mode.title()}**", inline=False)
@@ -1054,7 +1110,7 @@ class AIChatCog(commands.Cog):
             if self._is_known_command(content):
                 await self._send_reply(message, "🎬 Nice try. The Director didn't clear you for that command.")
             else:
-                await self._send_reply(message, "🤨 Never heard of that command.\nTry ~help instead.")
+                await self._send_reply(message, "🤨 Never heard of that command.\nTry ~aihelp instead.")
             return
 
         if content == "~activate":
@@ -1099,6 +1155,9 @@ class AIChatCog(commands.Cog):
                 provider_value = provider_status.replace("_", " ").title()
 
             stats = self.middleware.get_stats()
+            budget_status = get_response_budget().get_status()
+            availability_status = get_bot_availability().get_status()
+            
             embed = discord.Embed(
                 title="🤖 MI BOMBO AI Status",
                 description="Live status and bot telemetry.",
@@ -1120,6 +1179,8 @@ class AIChatCog(commands.Cog):
             embed.add_field(name="💬 Conversations", value=str(len(self.sessions)), inline=True)
             embed.add_field(name="🏠 Guild", value=message.guild.name if message.guild else "Direct Message", inline=True)
             embed.add_field(name="📅 Started", value=self._start_time.strftime("%Y-%m-%d %H:%M UTC"), inline=True)
+            embed.add_field(name="🔄 Availability", value=f"{availability_status['state'].upper()} ({availability_status['remaining_minutes']}m)", inline=True)
+            embed.add_field(name="💰 Budget", value=f"{budget_status['state'].upper()} ({budget_status['usage_percentage']}%)", inline=True)
             embed.set_footer(text="MI BOMBO AI")
             await self._send_reply(message, None, embed=embed)
             return
@@ -1133,7 +1194,44 @@ class AIChatCog(commands.Cog):
             await self._send_reply(message, "Personality prompt reloaded.")
             return
 
-        await self._send_reply(message, "🤨 Never heard of that command.\nTry ~help instead.")
+        # Availability commands
+        if content == "~availability":
+            status = get_bot_availability().get_status()
+            status_text = f"**State:** {status['state'].upper()}\n**Remaining:** {status['remaining_minutes']} minutes\n**Window ends:** {status['window_end']}"
+            await self._send_reply(message, status_text)
+            return
+
+        if content.startswith("~forceonline "):
+            try:
+                duration = int(content.split()[1])
+                get_bot_availability().force_online(duration)
+                await self._send_reply(message, f"Forced online for {duration} minutes.")
+            except (ValueError, IndexError):
+                get_bot_availability().force_online()
+                await self._send_reply(message, "Forced online for random duration.")
+            return
+
+        if content == "~forceonline":
+            get_bot_availability().force_online()
+            await self._send_reply(message, "Forced online for random duration.")
+            return
+
+        if content.startswith("~forceoffline "):
+            try:
+                duration = int(content.split()[1])
+                get_bot_availability().force_offline(duration)
+                await self._send_reply(message, f"Forced offline for {duration} minutes.")
+            except (ValueError, IndexError):
+                get_bot_availability().force_offline()
+                await self._send_reply(message, "Forced offline for random duration.")
+            return
+
+        if content == "~forceoffline":
+            get_bot_availability().force_offline()
+            await self._send_reply(message, "Forced offline for random duration.")
+            return
+
+        await self._send_reply(message, "🤨 Never heard of that command.\nTry ~aihelp instead.")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -1153,7 +1251,6 @@ class AIChatCog(commands.Cog):
             reply_to_bot = self._is_reply_to_bot(message)
             name_detected = self._is_bot_name_mentioned(message)
 
-        is_dot_ai = bool(message.content and message.content.startswith(".ai "))
         is_rulesbot_command = bool(message.content and message.content.strip().lower() == ".rulesbot")
         is_roast = bool(message.content and "roast me" in message.content.lower())
         is_admin_command = bool(message.content and message.content.startswith("~"))
@@ -1164,9 +1261,8 @@ class AIChatCog(commands.Cog):
         print("Mention detected:", mention_detected)
         print("Name detected:", name_detected)
         print("Reply to bot:", reply_to_bot)
-        print("Is .ai command:", is_dot_ai)
         print("Roast trigger:", is_roast)
-        print("Should respond:", mention_detected or name_detected or reply_to_bot or is_dot_ai or is_roast)
+        print("Should respond:", mention_detected or name_detected or reply_to_bot or is_roast)
 
         if message.author.bot:
             print("Ignored because author is bot")
@@ -1206,6 +1302,16 @@ class AIChatCog(commands.Cog):
             print("Ignored because AI is disabled globally")
             return
 
+        # Check bot availability (online/offline cycles)
+        if not is_bot_available():
+            print("Ignored because bot is currently offline (availability window)")
+            return
+
+        # Check response budget - don't respond if budget exhausted
+        if not can_respond():
+            print("Ignored because response budget is exhausted")
+            return
+
         if mention_detected or name_detected:
             prompt = message.content
             if mention_detected:
@@ -1223,12 +1329,6 @@ class AIChatCog(commands.Cog):
             if not prompt:
                 prompt = "Continue the conversation naturally."
             await self._handle_response(message, prompt)
-            return
-
-        if is_dot_ai:
-            prompt = message.content[4:].strip()
-            if prompt:
-                await self._handle_response(message, prompt)
             return
 
         if is_roast:
