@@ -216,24 +216,29 @@ class AIChatTests(unittest.TestCase):
         diego_id = "user-456"
         bob_id = "user-789"
         
-        # Diego starts conversation with mention
-        manager.claim(channel_id, diego_id)
+        # Diego starts conversation with explicit mention
+        manager.claim(channel_id, diego_id, explicit_mention=True)
         
-        # Diego continues without mention - should respond
+        # Diego continues without mention - should respond (one continuation)
         self.assertTrue(manager.should_respond(channel_id, diego_id, directed_at_bot=False))
+        
+        # Diego continues again - should NOT respond (continuation already used)
+        self.assertFalse(manager.should_respond(channel_id, diego_id, directed_at_bot=False))
+        
+        # Diego mentions bot again - should respond and reset continuation
+        self.assertTrue(manager.should_respond(channel_id, diego_id, directed_at_bot=True))
+        
+        # Diego continues without mention - should respond (new continuation)
+        self.assertTrue(manager.should_respond(channel_id, diego_id, directed_at_bot=False))
+        
+        # Diego continues again - should NOT respond (continuation used again)
+        self.assertFalse(manager.should_respond(channel_id, diego_id, directed_at_bot=False))
         
         # Bob interrupts - should NOT respond (not owner, not directed)
         self.assertFalse(manager.should_respond(channel_id, bob_id, directed_at_bot=False))
         
-        # Diego continues again - should still respond
-        self.assertTrue(manager.should_respond(channel_id, diego_id, directed_at_bot=False))
-        
-        # Bob mentions bot directly - should respond and claim
-        self.assertTrue(manager.should_respond(channel_id, bob_id, directed_at_bot=True))
-        self.assertEqual(manager.get_owner(channel_id), bob_id)
-        
-        # Now Diego interrupts - should NOT respond
-        self.assertFalse(manager.should_respond(channel_id, diego_id, directed_at_bot=False))
+        # Diego mentions bot again after interruption - should respond
+        self.assertTrue(manager.should_respond(channel_id, diego_id, directed_at_bot=True))
 
     def test_conversation_manager_expires_after_timeout(self) -> None:
         from router.conversation_manager import ConversationManager

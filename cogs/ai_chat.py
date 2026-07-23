@@ -428,7 +428,7 @@ class AIChatCog(commands.Cog):
                     inline=False
                 )
                 
-                embed.set_footer(text="<a:waga:1529429229370871899> Have fun chatting with Bot-kun!")
+                embed.set_footer(text="so like uhm.. Have fun chatting with Bot-kun!")
                 
                 logger.info("[guide] Step 7: Sending embed")
                 guide_message = await message.channel.send(embed=embed)
@@ -655,7 +655,7 @@ class AIChatCog(commands.Cog):
         }
 
         if directed:
-            self.conversations.claim(channel_id, user_id)
+            self.conversations.claim(channel_id, user_id, explicit_mention=True)
             await self._handle_response(message, detected.prompt)
             return
 

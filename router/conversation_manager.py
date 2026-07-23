@@ -12,6 +12,7 @@ class ChannelConversation:
     user_id: str
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
+    continuation_used: bool = False
 
 
 class ConversationManager:
@@ -25,13 +26,17 @@ class ConversationManager:
         timeout = timedelta(minutes=self.CONVERSATION_TIMEOUT_MINUTES)
         return datetime.now(UTC) - conv.last_activity > timeout
 
-    def claim(self, channel_id: str, user_id: str) -> None:
+    def claim(self, channel_id: str, user_id: str, *, explicit_mention: bool = False) -> None:
         """Claim or update conversation ownership with current timestamp."""
         existing = self._active.get(channel_id)
         if existing:
             existing.user_id = user_id
             existing.last_activity = datetime.now(UTC)
-            logger.info("[conversation] Continued: channel=%s user=%s", channel_id, user_id)
+            if explicit_mention:
+                existing.continuation_used = False
+                logger.info("[conversation] Restarted via explicit mention: channel=%s user=%s", channel_id, user_id)
+            else:
+                logger.info("[conversation] Continued: channel=%s user=%s", channel_id, user_id)
         else:
             self._active[channel_id] = ChannelConversation(user_id=user_id)
             logger.info("[conversation] Started: channel=%s user=%s", channel_id, user_id)
@@ -65,11 +70,18 @@ class ConversationManager:
             return directed_at_bot
         if directed_at_bot:
             logger.info("[conversation] Resumed via explicit mention: user=%s", author_id)
-            self.claim(channel_id, author_id)
+            self.claim(channel_id, author_id, explicit_mention=True)
             return True
         if author_id == owner:
+            conv = self._active.get(channel_id)
+            if conv and conv.continuation_used:
+                logger.info("[conversation] Ignoring continuation (already used): channel=%s user=%s", channel_id, author_id)
+                return False
             # Update activity timestamp when owner continues conversation
             self.claim(channel_id, author_id)
+            if conv:
+                conv.continuation_used = True
+                logger.info("[conversation] Automatic continuation used: channel=%s user=%s", channel_id, author_id)
             return True
         return False
 

@@ -1,23 +1,50 @@
 """Clip episode summary generation for #bombo-times."""
 
+import json
+import os
 import random
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 CLIP_SUMMARY_CHANNEL_ID = 1526652930604662955
+EPISODE_FILE = Path(__file__).parent.parent / "data" / "bombo_episode.json"
 
 
 class ClipGenerator:
-    _episode_counter = 0
+    _recent_gif_queries: list[str] = []
 
     def __init__(self) -> None:
         self._last_clip_time: dict[int, datetime] = {}
+        # Ensure data directory exists
+        EPISODE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-    @classmethod
-    def next_episode_number(cls) -> int:
-        cls._episode_counter += 1
-        return cls._episode_counter
+    def _load_episode_number(self) -> int:
+        """Load the persistent episode number from file."""
+        if EPISODE_FILE.exists():
+            try:
+                with open(EPISODE_FILE, "r") as f:
+                    data = json.load(f)
+                    return data.get("episode_number", 0)
+            except (json.JSONDecodeError, IOError):
+                pass
+        return 0
+
+    def _save_episode_number(self, episode_number: int) -> None:
+        """Save the episode number to file."""
+        try:
+            with open(EPISODE_FILE, "w") as f:
+                json.dump({"episode_number": episode_number}, f)
+        except IOError:
+            pass
+
+    def next_episode_number(self) -> int:
+        """Get the next episode number, persisting across restarts."""
+        current = self._load_episode_number()
+        next_num = current + 1
+        self._save_episode_number(next_num)
+        return next_num
 
     def build_conversation_prompt(self, messages: list[dict]) -> str:
         """Build a prompt with actual conversation messages for AI summarization."""
@@ -43,7 +70,35 @@ class ClipGenerator:
         Returns:
             tuple: (summary_text, gif_query)
         """
-        system_prompt = """Generate a newspaper-style recap for Bombo Times, a recurring series based on real Discord conversations.
+        # Random narration styles
+        narration_styles = [
+            "It all started when...",
+            "Today's server drama featured...",
+            "Nobody expected this conversation to end the way it did...",
+            "In today's episode...",
+            "The server collectively lost brain cells when...",
+            "What began as a normal chat quickly turned into...",
+            "The timeline of events is as follows...",
+            "Witnesses reported the following sequence...",
+        ]
+
+        # Random ending styles
+        ending_styles = [
+            "Director's Note: Roll credits.",
+            "Director's Note: Nobody learned anything today.",
+            "Director's Note: See you next episode.",
+            "Director's Note: Another day, another Discord moment.",
+            "Director's Note: The plot thickens.",
+            "Director's Note: Some lessons were learned. Probably.",
+            "Director's Note: The server survived... somehow.",
+            "Director's Note: Fade to black.",
+            "Director's Note: Cue the ending theme.",
+        ]
+
+        selected_narration = random.choice(narration_styles)
+        selected_ending = random.choice(ending_styles)
+
+        system_prompt = f"""Generate a newspaper-style recap for Bombo Times, a recurring comedy series based on real Discord conversations.
 
 Your job is to turn the actual last ~30 messages into an entertaining episode, almost like recapping a sitcom.
 
@@ -54,7 +109,7 @@ Rules:
 - Write naturally, like someone watching the chaos unfold
 - Keep the tone witty, observational, and playful
 - Do NOT sound like ChatGPT or a news reporter
-- Keep it around 80-150 words
+- Keep it around 60-90 words (short and punchy)
 - Never summarize every message one by one
 - Never mention message counts, participant counts, or metadata
 - Never use Discord mentions. Use plain display names only
@@ -73,16 +128,18 @@ Forbidden phrases:
 Episode Header:
 Always begin with:
 🎬 BOMBO TIMES
-S0EXX
+S01EXXX
 "Episode Title"
 
 Where:
-- Season is always 0
-- Episode number is supplied by the application
-- Create a short, memorable title (3-8 words) based on the funniest moment
-- The title should feel like the name of a TV episode
+- Season is always 1
+- Episode number is supplied by the application (use exactly that format)
+- Create a SHORT clickbait-style title (2-6 words) based on the funniest moment
+- Good examples: "The Meme Disaster", "The Flashbang Incident", "Bro Started Tweaking", "Average Discord Moment", "The DM Allegations", "Nobody Saw This Coming", "The Identity Crisis Arc", "Certified Discord Chaos", "The Awkward Hello", "The Great Debate"
+- Avoid generic titles like "Diego's Confusion" or "Chase Gets Weird"
 
 Writing Style:
+Start your summary with: {selected_narration}
 Write like someone who's been watching the Discord server unfold from the sidelines.
 Don't explain what happened. Retell it.
 Don't describe every message. Instead, build one small story around the funniest moments.
@@ -90,22 +147,24 @@ Assume the reader was there and is reliving the moment.
 The humor should come from what actually happened—not from random jokes or AI filler.
 
 Ending:
-Finish with ONE short signature line such as:
-- Director's Note: ...
-- Roll credits.
-- Fade to black.
-- Until the next episode...
-- Cue the ending theme.
+Finish with exactly this line:
+{selected_ending}
 
 Reference something that actually happened in the conversation whenever possible.
 
+GIF Query:
+Generate ONE highly specific GIF search query (3-6 words) that matches the funniest moment.
+DO NOT use generic terms like: funny, meme, cat, reaction, lol, hilarious.
+Instead use specific reactions like: confused cat, awkward wave, flashbang reaction, brain loading, side eye, guy staring in disbelief, popcorn reaction, nervous laugh, caught lying, dramatic exit, keyboard smashing, screaming internally, villain laugh, anime betrayal, bro what face.
+The GIF should feel unique to this specific moment.
+
 Response Format:
 Return ONLY valid JSON with two keys:
-- "summary": the Bombo Times episode text
-- "gif_query": a 3-6 word search term for a GIF that matches the funniest moment (e.g., "confused searching", "people laughing", "facepalm", "chaotic reaction")"""
+- "summary": the Bombo Times episode text (including header and ending)
+- "gif_query": a specific 3-6 word search term for a GIF"""
         
         # Add episode number to the prompt
-        episode_header = f"Episode Number: S0E{episode_number:02d}\n\n"
+        episode_header = f"Episode Number: S01E{episode_number:03d}\n\n"
         user_prompt = episode_header + prompt
         
         messages = [
@@ -118,7 +177,6 @@ Return ONLY valid JSON with two keys:
             reply = result.get("reply", "")
             
             # Try to parse as JSON
-            import json
             try:
                 parsed = json.loads(reply)
                 summary = parsed.get("summary", reply)
@@ -131,6 +189,17 @@ Return ONLY valid JSON with two keys:
             # Remove any Discord mentions from summary
             summary = re.sub(r"<@!?\d+>", "", summary)
             summary = re.sub(r"<@&\d+>", "", summary)
+            
+            # Track recent GIF queries to avoid repetition
+            if gif_query in self._recent_gif_queries:
+                # If we've used this query recently, try to vary it slightly
+                variations = ["reaction", "moment", "face", "expression"]
+                if not any(v in gif_query.lower() for v in variations):
+                    gif_query = f"{gif_query} reaction"
+            
+            self._recent_gif_queries.append(gif_query)
+            if len(self._recent_gif_queries) > 10:
+                self._recent_gif_queries.pop(0)
             
             return summary.strip(), gif_query.strip()
         except Exception:
