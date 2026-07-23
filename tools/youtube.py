@@ -1,6 +1,7 @@
 """YouTube trailer/video search."""
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,14 @@ import aiohttp
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger("botkun.youtube")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("[%(levelname)s] %(name)s: %(message)s"))
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+logger.propagate = False
 
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
 
@@ -240,18 +249,30 @@ async def search_video(
     previous_topic: str | None = None,
     recent_video_ids: Optional[list[str]] = None,
 ) -> Optional[str]:
+    logger.info(f"[YOUTUBE SEARCH] Input query: '{query}', previous_topic: '{previous_topic}'")
+    
     api_key = os.getenv("YOUTUBE_API_KEY", YOUTUBE_API_KEY) or ""
-    if not query and not previous_topic:
-        return None
     if not api_key:
+        logger.warning("[YOUTUBE SEARCH] No API key configured")
+        return None
+    if not query and not previous_topic:
+        logger.warning("[YOUTUBE SEARCH] No query provided")
         return None
     if not is_safe_request(query or previous_topic or ""):
+        logger.warning(f"[YOUTUBE SEARCH] Unsafe request blocked: '{query or previous_topic}'")
         return None
+    
     if is_follow_up_request(query) and previous_topic:
+        logger.info(f"[YOUTUBE SEARCH] Follow-up request detected, using previous_topic: '{previous_topic}'")
         query = previous_topic
+    
     search_query = extract_search_query(query).strip() or (previous_topic or "").strip()
+    logger.info(f"[YOUTUBE SEARCH] Extracted search query: '{search_query}'")
+    
     if not search_query:
+        logger.warning("[YOUTUBE SEARCH] Empty search query after extraction")
         return None
+    
     prefer_recent = any(term in _normalize_text(query) for term in RECENT_TERMS)
     params = {
         "part": "snippet",
@@ -263,28 +284,55 @@ async def search_video(
         "safeSearch": "strict",
         "key": api_key,
     }
+    
+    logger.info(f"[YOUTUBE SEARCH] API params: q='{search_query}', prefer_recent={prefer_recent}")
+    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 "https://www.googleapis.com/youtube/v3/search", params=params, timeout=10
             ) as response:
+                logger.info(f"[YOUTUBE SEARCH] API response status: {response.status}")
                 if response.status != 200:
+                    logger.warning(f"[YOUTUBE SEARCH] API returned non-200 status: {response.status}")
                     return None
+                
                 payload = json.loads(await response.text() or "{}")
                 items = payload.get("items", []) or []
+                logger.info(f"[YOUTUBE SEARCH] API returned {len(items)} items")
+                
                 query_tokens = set(re.findall(r"[a-z0-9]+", search_query.lower()))
                 recent_ids = {vid for vid in (recent_video_ids or []) if vid}
+                logger.info(f"[YOUTUBE SEARCH] Query tokens: {query_tokens}, Recent IDs to skip: {recent_ids}")
+                
                 scored = []
                 for item in items:
                     video_id = item.get("id", {}).get("videoId")
-                    if not video_id or video_id in recent_ids:
+                    snippet = item.get("snippet", {})
+                    title = snippet.get("title", "")
+                    logger.info(f"[YOUTUBE SEARCH] Item: video_id={video_id}, title='{title}'")
+                    
+                    if not video_id:
+                        logger.info(f"[YOUTUBE SEARCH] Skipping item: no video_id")
                         continue
-                    scored.append((_score_video_item(item, query_tokens, prefer_recent), video_id))
+                    if video_id in recent_ids:
+                        logger.info(f"[YOUTUBE SEARCH] Skipping item: video_id in recent_ids")
+                        continue
+                    
+                    score = _score_video_item(item, query_tokens, prefer_recent)
+                    logger.info(f"[YOUTUBE SEARCH] Item score: {score}")
+                    scored.append((score, video_id))
+                
                 if not scored:
+                    logger.warning(f"[YOUTUBE SEARCH] No scored items after filtering")
                     return None
+                
                 scored.sort(key=lambda pair: pair[0], reverse=True)
-                return f"https://youtu.be/{scored[0][1]}"
-    except Exception:
+                best_score, best_id = scored[0]
+                logger.info(f"[YOUTUBE SEARCH] Best result: score={best_score}, video_id={best_id}")
+                return f"https://youtu.be/{best_id}"
+    except Exception as e:
+        logger.error(f"[YOUTUBE SEARCH] Exception during search: {e}")
         return None
 
 
