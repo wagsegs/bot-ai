@@ -340,62 +340,75 @@ class AIChatCog(commands.Cog):
                 await self._send_reply(message, f"{BOT_NAME} is {reason} right now.")
         
         if command == "~guide":
-            logger.info("[%s] Building guide...", command)
-            # Delete user's command message
             try:
-                await message.delete()
+                logger.info("[guide] Step 1: Starting guide command")
+                # Delete user's command message
+                logger.info("[guide] Step 2: Deleting user message")
+                try:
+                    await message.delete()
+                except Exception as e:
+                    logger.warning("[guide] Failed to delete user message: %s", e)
+                
+                # Create guide embed
+                logger.info("[guide] Step 3: Creating embed")
+                from pathlib import Path
+                image_path = Path(__file__).parent.parent / "image.png"
+                
+                logger.info("[guide] Step 4: Building embed fields")
+                embed = discord.Embed(
+                    title="🤖 Bot-kun Guide",
+                    description="I'm just another member of the server.\n\nTalk to me naturally—mention me once, then keep chatting normally.\n\nI won't always reply, and that's intentional.",
+                    color=discord.Color.teal()
+                )
+                
+                logger.info("[guide] Step 5: Setting thumbnail")
+                if image_path.exists():
+                    with open(image_path, "rb") as f:
+                        embed.set_thumbnail(file=discord.File(f, "image.png"))
+                
+                logger.info("[guide] Step 6: Adding fields")
+                embed.add_field(
+                    name="✨ What I Can Do",
+                    value="• Chat naturally\n• Pull up YouTube videos\n• Send GIFs & memes\n• Occasionally join conversations\n• Turn funny moments into **Bombo Times** episodes",
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="💡 Tips",
+                    value="• You don't need commands for everything.\n• If I don't reply, I might be taking a break, busy talking to someone else, or slowing myself down.",
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="📜 Public Commands",
+                    value="`~botkun`   Check if I'm online.\n`~guide`    Show this guide.",
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="🎬 Bombo Times",
+                    value="Admins can use `~clip` to turn the latest conversation into a **Bombo Times** episode posted in **#bombo-times**.",
+                    inline=False
+                )
+                
+                embed.set_footer(text="This guide disappears in 45 seconds.")
+                
+                logger.info("[guide] Step 7: Sending embed")
+                guide_message = await message.channel.send(embed=embed)
+                logger.info("[%s] Guide sent successfully.", command)
+                
+                # Auto-delete after 45 seconds
+                logger.info("[guide] Step 8: Starting 45s sleep for auto-delete")
+                await asyncio.sleep(45)
+                logger.info("[guide] Step 9: Deleting guide message")
+                try:
+                    await guide_message.delete()
+                except Exception as e:
+                    logger.warning("[guide] Failed to delete guide message: %s", e)
+                logger.info("[guide] Step 10: Guide command completed")
             except Exception:
-                pass
-            
-            # Create guide embed
-            from pathlib import Path
-            image_path = Path(__file__).parent.parent / "image.png"
-            
-            embed = discord.Embed(
-                title="🤖 Bot-kun Guide",
-                description="I'm just another member of the server.\n\nTalk to me naturally—mention me once, then keep chatting normally.\n\nI won't always reply, and that's intentional.",
-                color=discord.Color.teal()
-            )
-            
-            if image_path.exists():
-                with open(image_path, "rb") as f:
-                    embed.set_thumbnail(file=discord.File(f, "image.png"))
-            
-            embed.add_field(
-                name="✨ What I Can Do",
-                value="• Chat naturally\n• Pull up YouTube videos\n• Send GIFs & memes\n• Occasionally join conversations\n• Turn funny moments into **Bombo Times** episodes",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="💡 Tips",
-                value="• You don't need commands for everything.\n• If I don't reply, I might be taking a break, busy talking to someone else, or slowing myself down.",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="📜 Public Commands",
-                value="`~botkun`   Check if I'm online.\n`~guide`    Show this guide.",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="🎬 Bombo Times",
-                value="Admins can use `~clip` to turn the latest conversation into a **Bombo Times** episode posted in **#bombo-times**.",
-                inline=False
-            )
-            
-            embed.set_footer(text="This guide disappears in 45 seconds.")
-            
-            guide_message = await message.channel.send(embed=embed)
-            logger.info("[%s] Guide sent successfully.", command)
-            
-            # Auto-delete after 45 seconds
-            await asyncio.sleep(45)
-            try:
-                await guide_message.delete()
-            except Exception:
-                pass
+                logger.exception("Guide command failed")
+                raise
 
     async def _handle_admin_command(self, message: discord.Message) -> None:
         content = message.content.strip()
@@ -438,107 +451,128 @@ class AIChatCog(commands.Cog):
             return
 
         if command == "~dashboard":
-            logger.info("[%s] Building dashboard...", command)
-            import resource
-            from pathlib import Path
-            
-            mem_mb = 0.0
-            if sys.platform != "win32":
-                mem_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-            
-            cache_breakdown = self.server_cache.get_cache_breakdown()
-            
-            data = DashboardData(
-                start_time=self._start_time,
-                provider_status=self.provider.status,
-                ai_enabled=self.ai_enabled,
-                queue_stats=self.queue.get_stats(),
-                budget_status=get_response_budget().get_status(),
-                availability_status=get_bot_availability().get_status(),
-                conversation_count=self.conversations.count(),
-                cache_size=self.server_cache.size(),
-                memory_usage_mb=mem_mb,
-                bot_latency_ms=self.bot.latency * 1000,
-                last_error=self.queue.last_error,
-                cache_breakdown=cache_breakdown,
-            )
-            
-            fields = data.build_embed()
-            
-            # Create engineer-style dashboard embed
-            embed = discord.Embed(
-                title="╭──────────────────────────────╮\n        BOT-KUN DASHBOARD\n╰──────────────────────────────╯",
-                color=discord.Color.dark_teal(),
-                timestamp=datetime.now(timezone.utc)
-            )
-            
-            # Add image thumbnail
-            image_path = Path(__file__).parent.parent / "image.png"
-            if image_path.exists():
-                with open(image_path, "rb") as f:
-                    embed.set_thumbnail(file=discord.File(f, "image.png"))
-            
-            # System section
-            sys_vals = fields["system"]
-            embed.add_field(
-                name="System",
-                value=f"**AI:** {sys_vals['ai_enabled']}\n**Provider:** {sys_vals['provider']}\n**Status:** {sys_vals['provider_status']}\n**Uptime:** {sys_vals['uptime']}",
-                inline=False
-            )
-            
-            # Performance section
-            perf_vals = fields["performance"]
-            embed.add_field(
-                name="Performance",
-                value=f"**API Latency:** {perf_vals['api_latency_ms']} ms\n**Avg Response:** {perf_vals['avg_response_ms']} ms\n**Queue:** {perf_vals['queue_size']}\n**Rate:** {perf_vals['current_rate']}\n**Req/Min:** {perf_vals['requests_per_min']}",
-                inline=False
-            )
-            
-            # Availability section
-            avail_vals = fields["availability"]
-            embed.add_field(
-                name="Availability",
-                value=f"**State:** {avail_vals['state']}\n**Time Left:** {avail_vals['remaining_minutes']} min\n**Budget:** {avail_vals['budget_state']} ({avail_vals['budget_usage']})",
-                inline=False
-            )
-            
-            # Memory section
-            mem_vals = fields["memory"]
-            embed.add_field(
-                name="Memory",
-                value=f"**Conversations:** {mem_vals['conversations']}\n**Cache:** {mem_vals['cache_size']}\n**RAM:** {mem_vals['memory_mb']}",
-                inline=False
-            )
-            
-            # Statistics section
-            stats_vals = fields["statistics"]
-            embed.add_field(
-                name="Statistics",
-                value=f"**Success:** {stats_vals['success']}\n**Failures:** {stats_vals['failures']}\n**Dropped:** {stats_vals['dropped']}\n**Last Error:** {stats_vals['last_error']}",
-                inline=False
-            )
-            
-            # Server Cache section
-            cache_vals = fields["server_cache"]
-            embed.add_field(
-                name="Server Cache",
-                value=f"**Members:** {cache_vals['members']}\n**Channels:** {cache_vals['channels']}\n**Roles:** {cache_vals['roles']}",
-                inline=False
-            )
-            
-            # Admin Commands section
-            embed.add_field(
-                name="Admin Commands",
-                value="`~bot` Toggle Bot-kun\n`~reload` Reload bot and cache\n`~clip` Create Bombo Times episode\n`~blacklist` Manage blocked users",
-                inline=False
-            )
-            
-            # Footer with last updated time
-            embed.set_footer(text=f"Last Updated\n{fields['last_updated']}")
-            
-            await self._send_reply(message, None, embed=embed)
-            logger.info("[%s] Dashboard sent successfully.", command)
-            return
+            try:
+                logger.info("[dashboard] Step 1: Starting dashboard command")
+                logger.info("[dashboard] Step 2: Importing modules")
+                import resource
+                from pathlib import Path
+                
+                logger.info("[dashboard] Step 3: Getting memory usage")
+                mem_mb = 0.0
+                if sys.platform != "win32":
+                    mem_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+                
+                logger.info("[dashboard] Step 4: Getting cache breakdown")
+                cache_breakdown = self.server_cache.get_cache_breakdown()
+                
+                logger.info("[dashboard] Step 5: Creating DashboardData")
+                data = DashboardData(
+                    start_time=self._start_time,
+                    provider_status=self.provider.status,
+                    ai_enabled=self.ai_enabled,
+                    queue_stats=self.queue.get_stats(),
+                    budget_status=get_response_budget().get_status(),
+                    availability_status=get_bot_availability().get_status(),
+                    conversation_count=self.conversations.count(),
+                    cache_size=self.server_cache.size(),
+                    memory_usage_mb=mem_mb,
+                    bot_latency_ms=self.bot.latency * 1000,
+                    last_error=self.queue.last_error,
+                    cache_breakdown=cache_breakdown,
+                )
+                
+                logger.info("[dashboard] Step 6: Building embed fields")
+                fields = data.build_embed()
+                
+                # Create engineer-style dashboard embed
+                logger.info("[dashboard] Step 7: Creating embed")
+                embed = discord.Embed(
+                    title="╭──────────────────────────────╮\n        BOT-KUN DASHBOARD\n╰──────────────────────────────╯",
+                    color=discord.Color.dark_teal(),
+                    timestamp=datetime.now(timezone.utc)
+                )
+                
+                # Add image thumbnail
+                logger.info("[dashboard] Step 8: Setting thumbnail")
+                image_path = Path(__file__).parent.parent / "image.png"
+                if image_path.exists():
+                    with open(image_path, "rb") as f:
+                        embed.set_thumbnail(file=discord.File(f, "image.png"))
+                
+                # System section
+                logger.info("[dashboard] Step 9: Adding System field")
+                sys_vals = fields["system"]
+                embed.add_field(
+                    name="System",
+                    value=f"**AI:** {sys_vals['ai_enabled']}\n**Provider:** {sys_vals['provider']}\n**Status:** {sys_vals['provider_status']}\n**Uptime:** {sys_vals['uptime']}",
+                    inline=False
+                )
+                
+                # Performance section
+                logger.info("[dashboard] Step 10: Adding Performance field")
+                perf_vals = fields["performance"]
+                embed.add_field(
+                    name="Performance",
+                    value=f"**API Latency:** {perf_vals['api_latency_ms']} ms\n**Avg Response:** {perf_vals['avg_response_ms']} ms\n**Queue:** {perf_vals['queue_size']}\n**Rate:** {perf_vals['current_rate']}\n**Req/Min:** {perf_vals['requests_per_min']}",
+                    inline=False
+                )
+                
+                # Availability section
+                logger.info("[dashboard] Step 11: Adding Availability field")
+                avail_vals = fields["availability"]
+                embed.add_field(
+                    name="Availability",
+                    value=f"**State:** {avail_vals['state']}\n**Time Left:** {avail_vals['remaining_minutes']} min\n**Budget:** {avail_vals['budget_state']} ({avail_vals['budget_usage']})",
+                    inline=False
+                )
+                
+                # Memory section
+                logger.info("[dashboard] Step 12: Adding Memory field")
+                mem_vals = fields["memory"]
+                embed.add_field(
+                    name="Memory",
+                    value=f"**Conversations:** {mem_vals['conversations']}\n**Cache:** {mem_vals['cache_size']}\n**RAM:** {mem_vals['memory_mb']}",
+                    inline=False
+                )
+                
+                # Statistics section
+                logger.info("[dashboard] Step 13: Adding Statistics field")
+                stats_vals = fields["statistics"]
+                embed.add_field(
+                    name="Statistics",
+                    value=f"**Success:** {stats_vals['success']}\n**Failures:** {stats_vals['failures']}\n**Dropped:** {stats_vals['dropped']}\n**Last Error:** {stats_vals['last_error']}",
+                    inline=False
+                )
+                
+                # Server Cache section
+                logger.info("[dashboard] Step 14: Adding Server Cache field")
+                cache_vals = fields["server_cache"]
+                embed.add_field(
+                    name="Server Cache",
+                    value=f"**Members:** {cache_vals['members']}\n**Channels:** {cache_vals['channels']}\n**Roles:** {cache_vals['roles']}",
+                    inline=False
+                )
+                
+                # Admin Commands section
+                logger.info("[dashboard] Step 15: Adding Admin Commands field")
+                embed.add_field(
+                    name="Admin Commands",
+                    value="`~bot` Toggle Bot-kun\n`~reload` Reload bot and cache\n`~clip` Create Bombo Times episode\n`~blacklist` Manage blocked users",
+                    inline=False
+                )
+                
+                # Footer with last updated time
+                logger.info("[dashboard] Step 16: Setting footer")
+                embed.set_footer(text=f"Last Updated\n{fields['last_updated']}")
+                
+                logger.info("[dashboard] Step 17: Sending embed")
+                await self._send_reply(message, None, embed=embed)
+                logger.info("[%s] Dashboard sent successfully.", command)
+                logger.info("[dashboard] Step 18: Dashboard command completed")
+                return
+            except Exception:
+                logger.exception("Dashboard command failed")
+                raise
 
         if command == "~reload":
             self.server_cache.clear()
