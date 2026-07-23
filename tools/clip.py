@@ -37,8 +37,12 @@ class ClipGenerator:
         
         return "\n".join(lines)
 
-    async def generate_ai_summary(self, prompt: str, provider, episode_number: int) -> str:
-        """Generate a funny recap using the AI provider."""
+    async def generate_ai_summary(self, prompt: str, provider, episode_number: int) -> tuple[str, str]:
+        """Generate a funny recap and GIF query using the AI provider.
+        
+        Returns:
+            tuple: (summary_text, gif_query)
+        """
         system_prompt = """Generate a newspaper-style recap for Bombo Times, a recurring series based on real Discord conversations.
 
 Your job is to turn the actual last ~30 messages into an entertaining episode, almost like recapping a sitcom.
@@ -93,7 +97,12 @@ Finish with ONE short signature line such as:
 - Until the next episode...
 - Cue the ending theme.
 
-Reference something that actually happened in the conversation whenever possible."""
+Reference something that actually happened in the conversation whenever possible.
+
+Response Format:
+Return ONLY valid JSON with two keys:
+- "summary": the Bombo Times episode text
+- "gif_query": a 3-6 word search term for a GIF that matches the funniest moment (e.g., "confused searching", "people laughing", "facepalm", "chaotic reaction")"""
         
         # Add episode number to the prompt
         episode_header = f"Episode Number: S0E{episode_number:02d}\n\n"
@@ -107,12 +116,25 @@ Reference something that actually happened in the conversation whenever possible
         try:
             result = await provider.chat(messages)
             reply = result.get("reply", "")
-            # Remove any Discord mentions that might have slipped through
-            reply = re.sub(r"<@!?\d+>", "", reply)
-            reply = re.sub(r"<@&\d+>", "", reply)
-            return reply.strip()
+            
+            # Try to parse as JSON
+            import json
+            try:
+                parsed = json.loads(reply)
+                summary = parsed.get("summary", reply)
+                gif_query = parsed.get("gif_query", "funny")
+            except (json.JSONDecodeError, TypeError):
+                # Fallback: use entire reply as summary, default gif query
+                summary = reply
+                gif_query = "funny"
+            
+            # Remove any Discord mentions from summary
+            summary = re.sub(r"<@!?\d+>", "", summary)
+            summary = re.sub(r"<@&\d+>", "", summary)
+            
+            return summary.strip(), gif_query.strip()
         except Exception:
-            return "The episode was too chaotic to summarize. Even the AI gave up."
+            return "The episode was too chaotic to summarize. Even the AI gave up.", "confused"
 
     def build_summary(self, messages: list[dict], *, user_names: dict[str, str] | None = None, provider=None) -> str:
         """Legacy method — use generate_ai_summary instead."""

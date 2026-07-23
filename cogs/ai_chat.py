@@ -368,19 +368,17 @@ class AIChatCog(commands.Cog):
             channel = message.channel
             messages = await self.clip_gen.fetch_channel_messages(channel, limit=30)
             episode_num = self.clip_gen.next_episode_number()
-            summary = await self.clip_gen.generate_ai_summary(
+            summary, gif_query = await self.clip_gen.generate_ai_summary(
                 self.clip_gen.build_conversation_prompt(messages),
                 self.provider,
                 episode_number=episode_num
             )
             target = self.bot.get_channel(CLIP_SUMMARY_CHANNEL_ID)
-            meme_url = await self.tools.handle_meme()
-            gif_url = await self.tools.handle_gif("funny") if not meme_url else None
-            media = meme_url or gif_url
+            gif_url = await self.tools.handle_gif(gif_query)
             if target:
                 await target.send(summary, allowed_mentions=discord.AllowedMentions.none())
-                if media:
-                    await target.send(media, allowed_mentions=discord.AllowedMentions.none())
+                if gif_url:
+                    await target.send(gif_url, allowed_mentions=discord.AllowedMentions.none())
                 await self._send_reply(message, f"Done.\n{target.jump_url if hasattr(target, 'jump_url') else ''}")
             else:
                 await self._send_reply(message, "Couldn't find #bombo-times channel.")
