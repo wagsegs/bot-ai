@@ -418,7 +418,7 @@ class AIChatCog(commands.Cog):
                 
                 embed.add_field(
                     name="📜 Public Commands",
-                    value="`~botkun` — Check if I'm online.\n`~guide` — Show this guide.",
+                    value="`~botkun` — Check if I'm online.",
                     inline=False
                 )
                 
